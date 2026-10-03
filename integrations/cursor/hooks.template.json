@@ -3,37 +3,37 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider cursor"
+        "command": "\"/absolute/path/to/tripwire\" agent-hook --provider cursor"
       }
     ],
     "sessionEnd": [
       {
-        "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider cursor"
+        "command": "\"/absolute/path/to/tripwire\" agent-hook --provider cursor"
       }
     ],
     "beforeSubmitPrompt": [
       {
-        "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider cursor"
+        "command": "\"/absolute/path/to/tripwire\" agent-hook --provider cursor"
       }
     ],
     "preToolUse": [
       {
-        "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider cursor"
+        "command": "\"/absolute/path/to/tripwire\" agent-hook --provider cursor"
       }
     ],
     "postToolUse": [
       {
-        "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider cursor"
+        "command": "\"/absolute/path/to/tripwire\" agent-hook --provider cursor"
       }
     ],
     "postToolUseFailure": [
       {
-        "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider cursor"
+        "command": "\"/absolute/path/to/tripwire\" agent-hook --provider cursor"
       }
     ],
     "stop": [
       {
-        "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider cursor"
+        "command": "\"/absolute/path/to/tripwire\" agent-hook --provider cursor"
       }
     ]
   }

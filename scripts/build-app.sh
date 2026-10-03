@@ -10,6 +10,7 @@ OUTPUT_DIR="dist"
 APP="$OUTPUT_DIR/TripWire.app"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
+cp LICENSE "$APP/Contents/Resources/LICENSE"
 cp .build/release/TripWireApp "$APP/Contents/MacOS/TripWireApp"
 cp -R .build/release/TripWire_TripWireApp.bundle "$APP/Contents/Resources/"
 cp Sources/TripWireApp/Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
@@ -26,6 +27,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
+<key>NSHumanReadableCopyright</key><string>Copyright © 2026 RedMars LLC. MIT License.</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

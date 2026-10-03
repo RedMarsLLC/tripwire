@@ -2,12 +2,12 @@
 
 ## Repository assessment — 2026-10-01
 
-`/Users/jakebrown/repos/tripwire` did not exist. Parent directories contained no applicable AGENTS.md, and no memory_summary.md was present in the checked local memory directory. There was no existing architecture or user work to replace. The host provides macOS 26.5.1, Swift 6.2.3 and Xcode SDK 26.2. The repository path is the authoritative deliverable. Initial staging was reconciled before continuing edits here.
+The initial implementation targeted macOS 14+ and was validated on Apple silicon with Swift 6.2.3. The shared engine now has Linux/Windows platform adapters and a portable desktop; see [platform support](PLATFORM_SUPPORT.md) for current maturity and validation limits.
 
 ## Boundaries
 
 ```text
-macOS public APIs / documented read-only utilities
+Platform APIs / documented read-only utilities
   ↓ independent Collector snapshots + explicit health/scope
 TripWireCollectors: source parsing and allowlisted metadata
   ↓
@@ -19,7 +19,8 @@ FindingEngine + conservative CorrelationEngine
   ↓
 TripWireCore read model
   ├─ native SwiftUI dashboard and floating overlay
-  └─ TripWireTerminal + tripwire commands / JSON
+  ├─ TripWireTerminal + tripwire commands / JSON
+  └─ Windows/Linux Qt desktop through the local CLI
 ```
 
 `TripWireCore` owns Codable models, SQLite persistence, baseline comparison, detection, correlation, explanations and sequence-gap tracking. `TripWireCollectors` owns host reads and source-specific limitations. `TripWireTerminal` owns pure rendering plus terminal lifecycle. The CLI and GUI consume the same store and collection coordinator. No second detection pipeline exists in the terminal.

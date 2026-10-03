@@ -1,6 +1,6 @@
 import Foundation
 
-public struct EvidenceWindow {
+public struct EvidenceWindow: Encodable {
     public var events: [EvidenceEvent]
     public var findings: [Finding]
     public var eventsTruncated: Bool

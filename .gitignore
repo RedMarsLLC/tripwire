@@ -5,3 +5,6 @@ dist/
 *.db*
 .DS_Store
 validation/
+.venv/
+__pycache__/
+*.pyc

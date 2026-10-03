@@ -18,7 +18,7 @@ struct AIAppResourcesPanel: View {
                     Text(app.memoryBytes.map { String(format: "Memory footprint sum: %.2f GiB", $0 / 1_073_741_824) } ?? "Memory: unavailable")
                     Text("\(app.processCount) measured processes · \(app.id)").font(.caption.monospaced())
                     if app.limited { Text("Partial interval or process visibility. Unmeasured work is unknown; counts and resource sums may be lower bounds.").foregroundStyle(.orange).font(.caption) }
-                }.padding().frame(maxWidth: .infinity, alignment: .leading).background(panel).clipShape(RoundedRectangle(cornerRadius: 8))
+                }.padding().frame(maxWidth: .infinity, alignment: .leading).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 8))
             }
             Button("Inspect agent action reports and source status") { model.route = .agents(nil) }
             Text("CPU is normalized over all logical cores (100% = the entire host). Memory is a sum of OS process footprints and may include shared accounting. App recognition uses bundle metadata; process grouping uses exact bundle paths and observed parent relationships. This is resource association, not security attestation or attribution to an individual prompt.")

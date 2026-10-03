@@ -39,7 +39,7 @@ def check_overview(output, width, height, ascii_only):
     assert 'COVERAGE UNKNOWN' in frame and 'NEVER' in frame
     assert '[q] quit' in frame and 'tripwire> _' in frame
     if height == 24:
-        assert 'OPEN FINDINGS 0' in frame and 'ES loss UNKNOWN' in frame
+        assert 'OPEN FINDINGS 0' in frame and 'event loss UNKNOWN' in frame
         assert 'No findings does not establish safety.' in frame
     if ascii_only:
         assert output.isascii()

@@ -24,9 +24,6 @@ final class TripWireApplicationDelegate: NSObject, NSApplicationDelegate {
         }
     }
 }
-let ink = Color(red: 0.035, green: 0.05, blue: 0.07)
-let panel = Color(red: 0.065, green: 0.085, blue: 0.11)
-let accent = Color(red: 0.45, green: 0.82, blue: 0.72)
 
 struct Dashboard: View {
     @EnvironmentObject var model: DashboardModel
@@ -38,22 +35,14 @@ struct Dashboard: View {
         Binding(get: { model.route.screen }, set: { if let screen = $0 { model.route = .page(screen) } })
     }
     var body: some View {
-        NavigationSplitView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("TRIPWIRE").font(.system(size: 24, weight: .black, design: .monospaced)).foregroundStyle(accent)
-                Text("HOST SECURITY WATCHDOG").font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
-                List(Screen.allCases, selection: selection) { screen in
-                    Label(screen.rawValue, systemImage: screen.icon).font(.system(size: 11, weight: .semibold, design: .monospaced)).tag(screen)
-                }.listStyle(.sidebar)
-                Text("Observe · Detect · Understand").font(.caption).foregroundStyle(.secondary).padding(.bottom)
-            }.padding(.top, 20).padding(.horizontal, 10).background(ink)
-                .navigationSplitViewColumnWidth(min: 210, ideal: 220, max: 280)
-        } detail: {
+        HStack(spacing: 0) {
+            sidebar
+            Rectangle().fill(CyberTheme.line).frame(width: 1)
             VStack(spacing: 0) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(model.route == .spike ? "SPIKE INVESTIGATION" : model.route.screen.rawValue).font(.system(size: 22, weight: .bold, design: .monospaced))
-                        Text("Local observations · no automatic response actions").font(.caption).foregroundStyle(.secondary)
+                        Text("OBSERVATION CONSOLE / LOCAL EVIDENCE").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button(model.sampling && !model.running ? "Checking…" : "Take snapshot") { model.begin(once: true) }.disabled(model.sampling)
@@ -61,13 +50,14 @@ struct Dashboard: View {
                         model.running ? model.stop() : model.begin(once: false)
                     }.disabled(model.stopping || (model.sampling && !model.running))
                     Button("Overlay") { showOverlay() }
-                }.padding(20).background(panel)
+                }.padding(20).cyberPanel()
                 if model.metricInspection != nil && model.route != .spike {
                     HStack {
                         Button("← Back to spike investigation") { model.route = .spike }
                         Spacer()
                     }.padding(.horizontal, 20).padding(.vertical, 6)
                 }
+                if let alert = model.alert { alertBanner(alert) }
                 if let error = model.error {
                     HStack(alignment: .top) {
                         Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
@@ -103,12 +93,64 @@ struct Dashboard: View {
                         proxy.scrollTo("pageTop", anchor: .top)
                     }
                 }
-            }.background(ink)
-        }.tint(accent).onReceive(timer) { _ in model.refreshInBackground() }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }.background(CyberBackground()).foregroundStyle(Color(red: 0.85, green: 0.93, blue: 0.96)).font(.system(size: 13, design: .monospaced)).buttonStyle(CyberButtonStyle()).tint(accent).onReceive(timer) { _ in model.refreshInBackground() }
             .task { if CommandLine.arguments.contains("--show-overlay") { showOverlay() } }
+    }
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            CyberWordmark().padding(.horizontal, 18).padding(.top, 24)
+            Rectangle().fill(CyberTheme.line).frame(height: 1).padding(.horizontal, 18)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    navGroup("WATCH", [.overview, .findings, .tripwires, .security, .files, .agents])
+                    navGroup("INVESTIGATE", [.events, .applications, .network, .processes, .persistence, .hardware, .system, .baseline])
+                    navGroup("SYSTEM", [.coverage, .health])
+                }.padding(.horizontal, 10)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("LOCAL BY DESIGN").font(.system(size: 9, weight: .bold, design: .monospaced)).tracking(1).foregroundStyle(accent)
+                Text("RedMars LLC · MIT licensed").font(.system(size: 10, design: .monospaced)).foregroundStyle(CyberTheme.muted)
+            }.padding(18)
+        }.frame(width: 218).background(ink.opacity(0.85))
+    }
+    private func navGroup(_ title: String, _ screens: [Screen]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 9, weight: .bold, design: .monospaced)).tracking(2).foregroundStyle(CyberTheme.muted).padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 6)
+            ForEach(screens) { screen in
+                Button { model.route = .page(screen) } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: screen.icon).frame(width: 17)
+                        Text(screen.rawValue).font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        Spacer(minLength: 0)
+                        if screen == .tripwires { Circle().fill(CyberTheme.pink).frame(width: 4, height: 4) }
+                    }.foregroundStyle(model.route.screen == screen ? accent : CyberTheme.muted)
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                        .background(model.route.screen == screen ? accent.opacity(0.10) : .clear, in: CyberCut(cut: 5))
+                        .overlay(alignment: .leading) { if model.route.screen == screen { Rectangle().fill(accent).frame(width: 2).padding(.vertical, 6) } }
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+        }
+    }
+    private func alertBanner(_ finding: Finding) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "bolt.shield.fill").foregroundStyle(CyberTheme.pink).font(.title2)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(finding.title).font(.headline).foregroundStyle(CyberTheme.pink)
+                Text(finding.component).lineLimit(2).font(.caption.monospaced())
+                Text("Observed \(TimeText.iso(finding.timestamp)) · alert only, no action blocked").font(.caption).foregroundStyle(CyberTheme.muted)
+            }
+            Spacer()
+            Button("Inspect evidence ↗") { model.route = .findings(finding.id) }
+            Button { model.dismissAlert(finding) } label: { Image(systemName: "xmark") }.help("Dismiss this banner; the finding is retained")
+        }.padding(14).background(CyberTheme.pink.opacity(0.09))
+            .overlay(alignment: .bottom) { Rectangle().fill(CyberTheme.pink.opacity(0.5)).frame(height: 1) }
     }
     @ViewBuilder private var page: some View {
         switch model.route {
+        case .tripwires: TripwiresPanel()
+        case .tripwireAlerts: findings(onlyTripwires: true)
         case .files: FileActivityPanel()
         case .security: SecurityWatchPanel()
         case .agents(let identity): AgentActivityPanel(identity: identity)
@@ -121,7 +163,7 @@ struct Dashboard: View {
             if let id {
                 if let finding = model.view?.findings.first(where: { $0.id == id }) { FindingDetail(finding: finding) }
                 else { empty("Finding unavailable", "Its details cannot be read from the current store.") }
-            } else { findings }
+            } else { findings() }
         case .events(let scope): events(scope)
         case .event(let id): EvidenceDetail(id: id)
         case .coverage(let scope): coverage(scope)
@@ -137,6 +179,14 @@ struct Dashboard: View {
     }
     private var overview: some View {
         VStack(alignment: .leading, spacing: 22) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Know what crossed the line.").font(.system(size: 28, weight: .bold, design: .monospaced))
+                    Text("Your machine. Your boundaries. Evidence you can inspect.").foregroundStyle(CyberTheme.muted)
+                }
+                Spacer()
+                Button("Configure tripwires ↗") { model.route = .tripwires }
+            }.padding(.bottom, 8)
             Button { model.route = .security } label: {
                 Label("Security Watch · apps, ports, extensions and monitoring gaps →", systemImage: "shield.lefthalf.filled")
             }
@@ -169,11 +219,12 @@ struct Dashboard: View {
             Button("View all recent observations") { model.route = .events(.all) }
         }
     }
-    private var findings: some View {
-        let all = model.view?.findings ?? []
+    private func findings(onlyTripwires: Bool = false) -> some View {
+        let all = (model.view?.findings ?? []).filter { !onlyTripwires || $0.ruleID.hasPrefix("user-tripwire:") }
         let filtered = all.filter { query.isEmpty || [$0.title, $0.component, $0.whatHappened, $0.whyFlagged].contains { $0.localizedCaseInsensitiveContains(query) } }
         return LazyVStack(alignment: .leading, spacing: 16) {
-            Text("What was found — and why").font(.title2.bold())
+            Text(onlyTripwires ? "Your tripwire alerts" : "What was found — and why").font(.title2.bold())
+            if onlyTripwires { Button("Show all findings") { model.route = .findings(nil) } }
             Text("Each finding links an observed change to its evidence. These are stored findings; review/resolution states are not implemented yet.").foregroundStyle(.secondary)
             TextField("Search findings, components, or reasons", text: $query).textFieldStyle(.roundedBorder)
             if model.view == nil { empty("Findings unavailable", "The evidence store could not be read. This does not mean there are zero findings.") }
@@ -231,7 +282,7 @@ struct Dashboard: View {
                     Text("Source: \(gap.collector) · \(gap.end == nil ? "OPEN" : "CLOSED")")
                     Text("\(TimeText.iso(gap.start)) → \(gap.end.map { TimeText.iso($0) } ?? "Unknown end")").font(.caption.monospaced())
                     Text("Coverage during this interval cannot be guaranteed.").foregroundStyle(.orange)
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(16).background(panel)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(16).cyberPanel()
             }
         }
     }
@@ -272,7 +323,7 @@ struct Dashboard: View {
     }
     private func empty(_ title: String, _ detail: String) -> some View {
         VStack(alignment: .leading, spacing: 8) { Text(title).font(.headline); Text(detail).foregroundStyle(.secondary) }
-            .frame(maxWidth: .infinity, alignment: .leading).padding(18).background(panel).clipShape(RoundedRectangle(cornerRadius: 10))
+            .frame(maxWidth: .infinity, alignment: .leading).padding(18).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -291,7 +342,7 @@ struct MetricButton: View {
                 HStack { Label(title, systemImage: icon).font(.caption.bold()); Spacer(); Image(systemName: "arrow.up.right").foregroundStyle(accent) }
                 Text(value).font(.system(size: 32, weight: .medium, design: .monospaced)).foregroundStyle(accent)
                 Text(note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16).background(panel)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16).cyberPanel()
                 .clipShape(RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(accent.opacity(0.25))).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel("\(title): \(value == "—" ? "Unknown" : value). \(note). Inspect details.")
     }
@@ -320,7 +371,7 @@ struct SensorCard: View {
                     Text(sensor.descriptor.limitations.joined(separator: "\n\n")).foregroundStyle(.orange)
                 }.font(.caption).textSelection(.enabled).padding(.top, 8)
             }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(18).background(panel).clipShape(RoundedRectangle(cornerRadius: 10))
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(18).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -340,6 +391,6 @@ struct InventoryCard: View {
                     }.font(.system(size: 11, design: .monospaced)).padding(.top, 12)
                 } label: {
                     HStack { Text(record.observation.component).lineLimit(2); Spacer(); Text(record.baselineStatus.rawValue).foregroundStyle(record.baselineStatus == .known ? Color.secondary : Color.yellow); if !record.present { Text("ABSENT").foregroundStyle(.secondary) } }.font(.system(size: 12, design: .monospaced))
-                }.padding(14).background(panel).clipShape(RoundedRectangle(cornerRadius: 6))
+                }.padding(14).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }

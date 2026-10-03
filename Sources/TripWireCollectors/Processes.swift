@@ -21,15 +21,16 @@ public enum ProcessParser {
     }
 }
 public struct ProcessCollector: Collector {
-    public let descriptor = SensorDescriptor("processes", "Process snapshots", source: "ps(1), Security signing metadata", monitors: "Running processes visible to this user at sample time; PID, parent PID, UID, start time and executable when available", limitations: ["Not an execution event stream. Short-lived processes may be missed.", "Start time has one-second precision; PID reuse within that interval is ambiguous.", "Executable paths/signing metadata may be unavailable or race process exit/replacement.", "Arguments and environment variables are not collected."])
+    public let descriptor = SensorDescriptor("processes", "Process snapshots", source: "ps(1), bounded Security signing metadata", monitors: "Running processes visible to this user at sample time; PID, parent PID, UID, start time and executable when available", limitations: ["Not an execution event stream. Short-lived processes may be missed.", "Start time has one-second precision; PID reuse within that interval is ambiguous.", "Executable paths/signing metadata may be unavailable or race process exit/replacement.", "Arguments and environment variables are not collected.", "Signing lookups have a two-second total wait budget and two outstanding workers; unavailable metadata remains unknown."])
     public init() {}
     public func collect() async -> CollectorSnapshot {
         let result = ProcessParser.snapshot()
         var cache: [String: ProcessIdentity] = [:]
+        let deadline = ProcessInfo.processInfo.systemUptime + 2
         let observations = result.processes.map { p -> Observation in
             var process = p
             if let path = p.executablePath {
-                if cache[path] == nil { cache[path] = Signature.identity(path) }
+                if cache[path] == nil { cache[path] = BoundedSignatureLookup.shared.identity(path, timeout: min(0.2, deadline - ProcessInfo.processInfo.systemUptime)) }
                 process.teamID = cache[path]?.teamID; process.bundleID = cache[path]?.bundleID; process.signingIdentity = cache[path]?.signingIdentity; process.signatureStatus = cache[path]?.signatureStatus
             }
             let path = process.executablePath ?? "UNKNOWN"

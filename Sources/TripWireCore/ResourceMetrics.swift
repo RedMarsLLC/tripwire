@@ -26,6 +26,7 @@ public struct RAMUsage: Equatable, Sendable {
     public let compressedBytes: UInt64?
     public let wiredBytes: UInt64?
     public let usedEstimateBytes: UInt64?
+    public private(set) var definition = "macOS VM pages; occupied includes reclaimable/cache pages; used estimate excludes file-backed cache."
     public var percent: Double { 100 * Double(occupiedBytes) / Double(totalBytes) }
     public init?(totalBytes: UInt64, freePages: UInt64, pageSize: UInt64, fileBackedPages: UInt64? = nil, compressedPages: UInt64? = nil, wiredPages: UInt64? = nil, anonymousPages: UInt64? = nil, purgeablePages: UInt64? = nil) {
         let (freeBytes, overflow) = freePages.multipliedReportingOverflow(by: pageSize)
@@ -45,6 +46,13 @@ public struct RAMUsage: Equatable, Sendable {
             let (used, overflow2) = resident.addingReportingOverflow(compressed)
             usedEstimateBytes = !overflow1 && !overflow2 && used <= totalBytes ? used : nil
         } else { usedEstimateBytes = nil }
+    }
+    /// Native available-memory counters have a different meaning from macOS free pages.
+    public init?(totalBytes: UInt64, availableBytes: UInt64, definition: String) {
+        guard totalBytes > 0, availableBytes <= totalBytes else { return nil }
+        self.totalBytes = totalBytes; occupiedBytes = totalBytes - availableBytes
+        usedEstimateBytes = occupiedBytes; fileBackedBytes = nil; compressedBytes = nil; wiredBytes = nil
+        self.definition = definition
     }
     public var breakdown: String {
         func gib(_ value: UInt64?) -> String { value.map { String(format: "%.2f GiB", Double($0) / 1_073_741_824) } ?? "UNKNOWN" }

@@ -1,6 +1,5 @@
 import Foundation
 import CSQLite
-import Darwin
 
 public enum StoreAccess { case readOnly, readWrite }
 
@@ -9,40 +8,29 @@ public final class EventStore {
     private let lock = NSRecursiveLock()
     private var waitingForStore = false
     public let url: URL
-    public static var defaultURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/TripWire/events.sqlite") }
+    public static var defaultURL: URL { HostPlatform.defaultStoreURL }
     public let access: StoreAccess
     public var isReadOnly: Bool { access == .readOnly }
     public init(url: URL = EventStore.defaultURL, access: StoreAccess = .readWrite) throws {
         self.url = url; self.access = access
         let directory = url.deletingLastPathComponent()
-        var attributes = stat()
-        let exists = lstat(url.path, &attributes) == 0
-        if !exists && errno != ENOENT { throw TripWireError.message("Event-store metadata is unreadable") }
+        let initialSize = try PrivateFiles.size(url.path)
+        let exists = initialSize != nil
         if exists {
-            try Self.validatePrivateFile(url.path)
-            for suffix in ["-wal", "-shm"] { try Self.validatePrivateFile(url.path + suffix, missingAllowed: true) }
+            try PrivateFiles.validate(url.path)
+            for suffix in ["-wal", "-shm"] { try PrivateFiles.validate(url.path + suffix, missingAllowed: true) }
         }
         // A first-run viewer gets an empty in-memory schema. It creates no on-disk state.
         let memoryOnly = access == .readOnly && !exists
         waitingForStore = memoryOnly
         if access == .readWrite {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            var parent = stat()
-            guard lstat(directory.path, &parent) == 0, parent.st_mode & S_IFMT == S_IFDIR, parent.st_uid == geteuid(), parent.st_mode & 0o022 == 0 else {
-                throw TripWireError.message("Evidence directory must be owned by this user, not a symlink, and not group/other writable")
-            }
-            if !exists {
-                let fd = open(url.path, O_CREAT | O_EXCL | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0o600)
-                guard fd >= 0 else { throw TripWireError.message("Could not securely create event store") }
-                close(fd)
-            }
+            try PrivateFiles.prepareDirectory(directory)
+            if !exists { try PrivateFiles.create(url.path) }
         }
         let flags: Int32 = (memoryOnly ? SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE : access == .readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE) | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW
         var sqlitePath = ":memory:"
         if !memoryOnly {
-            guard let resolved = realpath(directory.path, nil) else { throw TripWireError.message("Cannot resolve evidence directory") }
-            sqlitePath = String(cString: resolved) + "/" + url.lastPathComponent
-            free(resolved)
+            sqlitePath = try PrivateFiles.resolvedPath(url)
         }
         let opened = sqlite3_open_v2(sqlitePath, &db, flags, nil)
         guard opened == SQLITE_OK else {
@@ -52,7 +40,7 @@ public final class EventStore {
         }
         sqlite3_busy_timeout(db, 5000)
         do {
-            if exists && attributes.st_size > 0 {
+            if exists && (initialSize ?? 0) > 0 {
                 guard try scalar("SELECT value FROM metadata WHERE key='schema'") == "1" else { throw TripWireError.message("Unsupported or foreign event-store schema") }
             }
             if access == .readWrite || memoryOnly {
@@ -67,28 +55,17 @@ public final class EventStore {
             if access == .readOnly { try execute("PRAGMA query_only=ON") }
         } catch { sqlite3_close(db); db = nil; throw error }
     }
-    private static func validatePrivateFile(_ path: String, missingAllowed: Bool = false) throws {
-        var value = stat()
-        if lstat(path, &value) != 0 {
-            if missingAllowed && errno == ENOENT { return }
-            throw TripWireError.message("Cannot verify event-store file metadata")
-        }
-        guard value.st_mode & S_IFMT == S_IFREG, value.st_uid == geteuid(), value.st_nlink == 1, value.st_mode & 0o077 == 0 else {
-            throw TripWireError.message("Event-store files must be private regular files owned by this user (no symlinks, hard links or group/other access)")
-        }
-    }
     private func requireWritable() throws {
         guard !isReadOnly else { throw TripWireError.message("Read-only event-store connection cannot modify evidence") }
     }
     public func readSnapshot<T>(_ body: () throws -> T) throws -> T {
         lock.lock(); defer { lock.unlock() }
         if waitingForStore {
-            var attributes = stat()
-            if lstat(url.path, &attributes) == 0 {
+            if try PrivateFiles.size(url.path) != nil {
                 let replacement = try EventStore(url: url, access: .readOnly)
                 sqlite3_close(db); db = replacement.db; replacement.db = nil
                 waitingForStore = false
-            } else if errno != ENOENT { throw TripWireError.message("Event-store metadata became unreadable") }
+            }
         }
         try execute("BEGIN DEFERRED")
         do { let result = try body(); try execute("COMMIT"); return result }
@@ -182,6 +159,45 @@ public final class EventStore {
     public func integrityCheck() throws -> String { lock.lock(); defer { lock.unlock() }; return try scalar("PRAGMA quick_check") ?? "UNKNOWN" }
     public func metadata(_ key: String) throws -> String? { lock.lock(); defer { lock.unlock() }; return try scalar("SELECT value FROM metadata WHERE key=?", bindings: [key]) }
     public func setMetadata(_ key: String, _ value: String) throws { lock.lock(); defer { lock.unlock() }; try requireWritable(); _ = try query("INSERT OR REPLACE INTO metadata VALUES (?,?)", bindings: [key, value]) }
+    public func tripwireRules() throws -> [TripwireRule] {
+        lock.lock(); defer { lock.unlock() }
+        guard let value = try metadata("tripwire-rules-v1") else { return [] }
+        guard value.utf8.count <= 1_048_576 else { throw TripWireError.message("Tripwire configuration exceeds its size limit") }
+        let rules = try JSONDecoder.stored.decode([TripwireRule].self, from: Data(value.utf8))
+        guard rules.count <= 128, Set(rules.map(\.id)).count == rules.count else { throw TripWireError.message("Invalid tripwire configuration") }
+        return try rules.map { try $0.validated() }
+    }
+    public func saveTripwire(_ proposed: TripwireRule) throws {
+        var rule = try proposed.validated()
+        guard rule.platform == HostPlatform.current else { throw TripWireError.message("Edit this tripwire on its configured platform") }
+        rule.revision = UUID().uuidString
+        try changeTripwires(action: "SAVED", rule: rule) { rules in
+            if let i = rules.firstIndex(where: { $0.id == rule.id }) { rules[i] = rule }
+            else { guard rules.count < 128 else { throw TripWireError.message("Up to 128 tripwires are supported") }; rules.append(rule) }
+        }
+    }
+    public func deleteTripwire(id: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard let rule = try tripwireRules().first(where: { $0.id == id }) else { throw TripWireError.message("Tripwire not found") }
+        try changeTripwires(action: "DELETED", rule: rule) { $0.removeAll { $0.id == id } }
+    }
+    private func changeTripwires(action: String, rule: TripwireRule, change: (inout [TripwireRule]) throws -> Void) throws {
+        lock.lock(); defer { lock.unlock() }
+        try requireWritable(); try execute("BEGIN IMMEDIATE")
+        do {
+            var rules = try tripwireRules()
+            let audited = action == "DELETED" ? rules.first(where: { $0.id == rule.id }) : rule
+            guard let audited else { throw TripWireError.message("Tripwire no longer exists") }
+            try change(&rules)
+            try setMetadata("tripwire-rules-v1", String(decoding: try JSONEncoder.stable.encode(rules), as: UTF8.self))
+            let attrs = ["ruleID": audited.id, "name": audited.name, "path": audited.path, "kind": audited.kind.rawValue, "enabled": String(audited.enabled), "revision": audited.revision]
+            let observation = Observation(key: audited.id, eventClass: .configuration, component: audited.name, attributes: attrs)
+            let event = EvidenceEvent(timestamp: Date(), sourceCollector: "tripwire-configuration", eventType: action, observation: observation, currentState: action == "DELETED" ? nil : attrs, baselineStatus: .unknown,
+                evidence: ["Explicit local configuration change. No target was opened or modified. Rules apply to future observed snapshots; this is not a detection."], limitations: ["Rules alert on supported evidence and do not block access."])
+            try save(event, id: event.id, date: event.timestamp, table: "events")
+            try execute("COMMIT")
+        } catch { try? execute("ROLLBACK"); throw error }
+    }
     public func saveHealth(_ health: SensorHealth) throws { lock.lock(); defer { lock.unlock() }; try save(health, id: health.id, date: health.lastHeartbeat ?? Date(), table: "sensors") }
     public func recordGap(_ gap: CoverageGap) throws { lock.lock(); defer { lock.unlock() }; try save(gap, id: gap.id, date: gap.start, table: "gaps") }
     public func closeGaps(collector: String, at date: Date) throws {
@@ -246,6 +262,19 @@ public final class EventStore {
             for event in emitted {
                 try save(event, id: event.id, date: event.timestamp, table: "events")
                 if let finding = FindingEngine.make(event) { try save(finding, id: finding.id, date: finding.timestamp, table: "findings") }
+            }
+            // Evaluate fresh rows even when baseline metadata is unchanged. Saving
+            // a rule never turns an old inventory record into a new observation.
+            for match in TripwireMatcher.matches(snapshot, rules: try tripwireRules()) {
+                guard try metadata(match.key) == nil else { continue }
+                let event = EvidenceEvent(timestamp: snapshot.timestamp, sourceCollector: collector, eventType: "TRIPWIRE_MATCH", observation: match.observation,
+                    currentState: match.observation.attributes, baselineStatus: .unknown,
+                    evidence: ["User rule: \(match.rule.name) [\(match.rule.id)]", "Rule target: \(match.rule.path)", match.association, "Observed during this source snapshot; not a retroactive inventory match."],
+                    limitations: snapshot.descriptor.limitations + TripwireMatcher.limitations + (snapshot.complete ? [] : ["Partial source: " + snapshot.detail]), severity: .elevated)
+                let finding = match.finding(event: event)
+                try save(event, id: event.id, date: event.timestamp, table: "events")
+                try save(finding, id: finding.id, date: finding.timestamp, table: "findings")
+                try setMetadata(match.key, finding.id); emitted.append(event)
             }
             let priorHealth = try sensors().first { $0.id == collector }
             let successful = usable && (snapshot.complete || !snapshot.observations.isEmpty)

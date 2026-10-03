@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "command": "\"/absolute/path/to/tripwire\" agent-hook --provider claude-code",
             "timeout": 2
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "command": "\"/absolute/path/to/tripwire\" agent-hook --provider claude-code",
             "timeout": 2
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "command": "\"/absolute/path/to/tripwire\" agent-hook --provider claude-code",
             "timeout": 2
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "command": "\"/absolute/path/to/tripwire\" agent-hook --provider claude-code",
             "timeout": 2
           }
         ]
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "command": "\"/absolute/path/to/tripwire\" agent-hook --provider claude-code",
             "timeout": 2
           }
         ]
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "command": "\"/absolute/path/to/tripwire\" agent-hook --provider claude-code",
             "timeout": 2
           }
         ]
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "command": "\"/absolute/path/to/tripwire\" agent-hook --provider claude-code",
             "timeout": 2
           }
         ]
@@ -82,7 +82,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "command": "\"/absolute/path/to/tripwire\" agent-hook --provider claude-code",
             "timeout": 2
           }
         ]
@@ -93,7 +93,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "command": "\"/absolute/path/to/tripwire\" agent-hook --provider claude-code",
             "timeout": 2
           }
         ]
@@ -104,7 +104,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "command": "\"/absolute/path/to/tripwire\" agent-hook --provider claude-code",
             "timeout": 2
           }
         ]
@@ -115,7 +115,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "command": "\"/absolute/path/to/tripwire\" agent-hook --provider claude-code",
             "timeout": 2
           }
         ]
