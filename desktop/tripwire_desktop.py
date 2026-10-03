@@ -25,7 +25,6 @@ THEME = """
 QMainWindow, QWidget#surface { background:#040b11; color:#d8edf4; }
 QWidget { color:#d8edf4; font-family:monospace; font-size:12px; }
 QLabel { background:transparent; }
-QLabel#wordmark { font-size:31px; font-weight:900; font-style:italic; color:#0de8ff; }
 QLabel#tagline { font-size:9px; color:#ff24b0; }
 QLabel#eyebrow { color:#82b0be; font-size:10px; }
 QLabel#pageTitle { font-size:26px; font-weight:bold; color:#d8edf4; }
@@ -289,7 +288,9 @@ class Dashboard(QMainWindow):
         root=CyberSurface(); root.setObjectName("surface"); self.setCentralWidget(root)
         outer=QHBoxLayout(root); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
         sidebar=QWidget(); sidebar.setObjectName("sidebar"); sidebar.setFixedWidth(205); side=QVBoxLayout(sidebar); side.setContentsMargins(16,24,12,16)
-        brand=QLabel("TripWire"); brand.setObjectName("wordmark"); side.addWidget(brand)
+        brand=QLabel(); brand.setObjectName("wordmark"); brand.setAccessibleName("TripWire")
+        brand.setPixmap(QPixmap(str(ART / "DashboardLogo.png")))
+        brand.setFixedSize(177,59); brand.setScaledContents(True); side.addWidget(brand)
         tagline=QLabel("YOUR CYBER WATCHDOG"); tagline.setObjectName("tagline"); side.addWidget(tagline); side.addSpacing(26)
         self.nav=QListWidget(); self.nav.setObjectName("nav"); side.addWidget(self.nav)
         self.pages=QComboBox(); self.pages.addItems(["Findings","Tripwire alerts","Tripwires","Files","Processes","Network","Kernel / extensions","Checks","Recent evidence"]); self.pages.hide()
@@ -321,7 +322,7 @@ class Dashboard(QMainWindow):
         self.detail_key,self.detail_prefix,self.inspection="","",False
         engine.detail_ready.connect(self.show_detail)
     def make_config_panel(self):
-        widget=QWidget(); form=QVBoxLayout(widget); form.setContentsMargins(20,0,0,0)
+        widget=QWidget(); widget.setObjectName("surface"); form=QVBoxLayout(widget); form.setContentsMargins(20,0,0,0)
         heading=QLabel("SET THE BOUNDARIES"); heading.setObjectName("tagline"); form.addWidget(heading)
         form.addWidget(button("+ New tripwire",self.new_rule))
         fields=QFormLayout(); form.addLayout(fields)

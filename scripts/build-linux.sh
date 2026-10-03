@@ -8,7 +8,7 @@ mkdir -p dist/linux/desktop dist/linux/resources
 cp LICENSE dist/linux/LICENSE
 cp "$build_dir/release/tripwire" dist/linux/tripwire
 cp desktop/tripwire_desktop.py desktop/requirements.txt dist/linux/desktop/
-cp Sources/TripWireApp/Resources/OverlayFrame*.png assets/branding/AppIcon.png dist/linux/resources/
+cp Sources/TripWireApp/Resources/OverlayFrame*.png Sources/TripWireApp/Resources/DashboardLogo.png assets/branding/AppIcon.png dist/linux/resources/
 cat > dist/linux/start-desktop.sh <<'LAUNCH'
 #!/bin/sh
 set -eu

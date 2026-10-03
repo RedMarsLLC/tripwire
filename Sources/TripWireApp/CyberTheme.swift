@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 enum CyberTheme {
     static let cyan = Color(red: 0.05, green: 0.91, blue: 1)
@@ -55,11 +56,24 @@ struct CyberButtonStyle: ButtonStyle {
 }
 
 struct CyberWordmark: View {
+    private static let artworkBundle: Bundle = {
+        if let resources = Bundle.main.resourceURL,
+           let packaged = Bundle(url: resources.appendingPathComponent("TripWire_TripWireApp.bundle")) {
+            return packaged
+        }
+        return .module
+    }()
+    private static let artwork = artworkBundle.url(forResource: "DashboardLogo", withExtension: "png").flatMap(NSImage.init(contentsOf:))
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("TripWire").font(.system(size: 32, weight: .black, design: .rounded)).italic()
-                .foregroundStyle(LinearGradient(colors: [accent, .white, CyberTheme.pink], startPoint: .topLeading, endPoint: .bottomTrailing))
-                .shadow(color: accent.opacity(0.3), radius: 8)
+        VStack(spacing: 8) {
+            if let artwork = Self.artwork {
+                Image(nsImage: artwork).resizable().interpolation(.high).scaledToFit()
+                    .frame(width: 182, height: 61)
+                    .accessibilityLabel("TripWire")
+            } else {
+                Text("TripWire").font(.system(size: 32, weight: .black, design: .rounded)).foregroundStyle(accent)
+            }
             Text("YOUR CYBER WATCHDOG").font(.system(size: 8, weight: .bold, design: .monospaced)).tracking(2).foregroundStyle(accent)
         }.accessibilityElement(children: .combine)
     }

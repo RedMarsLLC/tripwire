@@ -30,7 +30,7 @@ var targets: [Target] = [
 products.append(.executable(name: "TripWireApp", targets: ["TripWireApp"]))
 targets += [
     .target(name: "TripWireCollectors", dependencies: ["TripWireCore"], exclude: ["Linux", "Windows", "PortableRegistry.swift", "PortableMetrics.swift"]),
-    .executableTarget(name: "TripWireApp", dependencies: ["TripWireCore", "TripWireCollectors"], resources: [.copy("Resources/OverlayFrame.png"), .copy("Resources/OverlayFrameVertical.png"), .copy("Resources/OverlayFrameMini.png"), .copy("Resources/AppIcon.icns")]),
+    .executableTarget(name: "TripWireApp", dependencies: ["TripWireCore", "TripWireCollectors"], resources: [.copy("Resources/OverlayFrame.png"), .copy("Resources/OverlayFrameVertical.png"), .copy("Resources/OverlayFrameMini.png"), .copy("Resources/DashboardLogo.png"), .copy("Resources/AppIcon.icns")]),
     .testTarget(name: "TripWireTests", dependencies: ["TripWireCore", "TripWireCollectors", "TripWireTerminal"], resources: [.copy("Fixtures")]),
     .testTarget(name: "TripWireAppTests", dependencies: ["TripWireApp"])
 ]

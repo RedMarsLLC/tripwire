@@ -19,7 +19,7 @@ Copy-Item LICENSE dist/windows/LICENSE
 Copy-Item .build/release/tripwire.exe dist/windows/
 Copy-Item (Join-Path $sqlite 'bin/sqlite3.dll') dist/windows/
 Copy-Item desktop/tripwire_desktop.py, desktop/requirements.txt dist/windows/desktop/
-Copy-Item Sources/TripWireApp/Resources/OverlayFrame*.png, assets/branding/AppIcon.png dist/windows/resources/
+Copy-Item Sources/TripWireApp/Resources/OverlayFrame*.png, Sources/TripWireApp/Resources/DashboardLogo.png, assets/branding/AppIcon.png dist/windows/resources/
 @'
 param([string]$Database)
 $ErrorActionPreference = 'Stop'

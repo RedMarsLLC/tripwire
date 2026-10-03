@@ -1,5 +1,7 @@
 # TripWire application icon
 
+The dashboard wordmark, `Sources/TripWireApp/Resources/DashboardLogo.png`, is the user's supplied `Neon Synthwave TripWire Logo.png`, preserved unchanged at 2172 × 724 with transparency. The native macOS and Qt dashboards share this artwork; all desktop packages include it.
+
 `AppIcon.png` is the original transparent artwork, created with the built-in image generation tool. The exact prompt is retained in `AppIcon.prompt.txt`.
 
 Run `sh scripts/build-icon.sh` after changing the artwork. It uses macOS `sips` and `iconutil` to produce `Sources/TripWireApp/Resources/AppIcon.icns` with standard and Retina representations from 16 to 1024 pixels. The generated ICNS is included in the source tree so ordinary Swift builds do not need to regenerate artwork.
