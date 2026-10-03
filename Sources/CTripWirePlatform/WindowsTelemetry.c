@@ -2,6 +2,8 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
+// The Windows SDK gates IPv6 IP Helper table types on Winsock IPv6 declarations.
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <tlhelp32.h>
 #include <psapi.h>
