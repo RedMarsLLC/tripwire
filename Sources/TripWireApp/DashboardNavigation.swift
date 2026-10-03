@@ -3,10 +3,12 @@ import TripWireCore
 import TripWireCollectors
 
 enum Screen: String, CaseIterable, Identifiable {
+    case tripwires = "TRIPWIRES"
     case files = "FILE ACTIVITY", security = "SECURITY WATCH", agents = "AGENT ACTIVITY", overview = "OVERVIEW", events = "OBSERVATIONS", findings = "FINDINGS", applications = "APPLICATIONS", network = "NETWORK", processes = "PROCESSES", persistence = "PERSISTENCE", hardware = "HARDWARE", system = "SYSTEM CHANGES", baseline = "BASELINE", coverage = "SENSOR STATUS", health = "WATCHDOG HEALTH"
     var id: String { rawValue }
     var icon: String {
         switch self {
+        case .tripwires: return "slider.horizontal.3"
         case .files: return "doc.text.magnifyingglass"
         case .security: return "shield.lefthalf.filled"
         case .applications: return "app.badge"
@@ -31,16 +33,18 @@ enum InventoryScope { case all, unknown }
 enum SensorScope: Equatable { case all, reporting, attention, unavailable, sensor(String) }
 
 enum DashboardRoute: Equatable {
+    case tripwires, tripwireAlerts
     case files, security, agents(String?), appResources, spike, overview, findings(String?), events(EventScope), event(String)
     case inventory(Screen, InventoryScope), coverage(SensorScope), health
 
     var screen: Screen {
         switch self {
+        case .tripwires: return .tripwires
         case .files: return .files
         case .security: return .security
         case .agents, .appResources: return .agents
         case .overview, .spike: return .overview
-        case .findings: return .findings
+        case .findings, .tripwireAlerts: return .findings
         case .events, .event: return .events
         case .inventory(let screen, _): return screen
         case .coverage: return .coverage
@@ -49,6 +53,7 @@ enum DashboardRoute: Equatable {
     }
     static func page(_ screen: Screen) -> Self {
         switch screen {
+        case .tripwires: return .tripwires
         case .files: return .files
         case .security: return .security
         case .agents: return .agents(nil)
@@ -63,10 +68,11 @@ enum DashboardRoute: Equatable {
 }
 
 enum DashboardMetric: CaseIterable, Equatable {
-    case findings, changes, unknowns, gaps, sockets, reporting
+    case findings, tripwireAlerts, changes, unknowns, gaps, sockets, reporting
     var destination: DashboardRoute {
         switch self {
         case .findings: return .findings(nil)
+        case .tripwireAlerts: return .tripwireAlerts
         case .changes: return .events(.changes)
         case .unknowns: return .inventory(.baseline, .unknown)
         case .gaps: return .health

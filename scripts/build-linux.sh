@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 build_dir="${TRIPWIRE_BUILD_PATH:-.build}"
 swift build --scratch-path "$build_dir" -c release --product tripwire
 mkdir -p dist/linux/desktop dist/linux/resources
+cp LICENSE dist/linux/LICENSE
 cp "$build_dir/release/tripwire" dist/linux/tripwire
 cp desktop/tripwire_desktop.py desktop/requirements.txt dist/linux/desktop/
 cp Sources/TripWireApp/Resources/OverlayFrame*.png assets/branding/AppIcon.png dist/linux/resources/

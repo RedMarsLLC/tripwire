@@ -13,7 +13,7 @@ struct SecurityWatchPanel: View {
                 Label("AI action attribution remains limited", systemImage: "exclamationmark.shield").font(.headline).foregroundStyle(.orange)
                 Text("This build cannot show everything an AI agent touches. File Activity associates observed open files with recognized apps and sampled child processes. It does not prove an AI instruction, actual reads/writes, or who installed an app or changed a setting.")
                 Button("Inspect the missing OS event collector →") { model.route = .coverage(.sensor("endpoint-security")) }
-            }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(panel).clipShape(RoundedRectangle(cornerRadius: 10))
+            }.padding(18).frame(maxWidth: .infinity, alignment: .leading).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 10))
 
             area("Applications", explanation: "New, changed or missing .app bundles in /Applications and your Applications folder. Bundle/version/signing metadata only; other locations and command-line packages are outside scope.", sources: ["applications"], destination: .inventory(.applications, .all))
             area("Ports and connections", explanation: "Visible TCP listeners and socket-owning processes; UDP bindings are listed separately. Brief sockets can be missed. Remote reachability and the agent that caused a port to open remain unknown.", sources: ["network"], destination: .inventory(.network, .all))
@@ -53,6 +53,6 @@ struct SecurityWatchPanel: View {
                     }.font(.caption)
                 }
             }
-        }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(panel).clipShape(RoundedRectangle(cornerRadius: 10))
+        }.padding(18).frame(maxWidth: .infinity, alignment: .leading).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }

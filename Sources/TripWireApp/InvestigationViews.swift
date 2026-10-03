@@ -18,7 +18,7 @@ struct FindingSummary: View {
                 Text("Flagged because: \(finding.whyFlagged)").foregroundStyle(.secondary)
                 Text("\(TimeText.iso(finding.timestamp)) · \(finding.confidence.rawValue) observation confidence · intent unknown")
                     .font(.caption).foregroundStyle(.secondary)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(18).background(panel)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(18).cyberPanel()
                 .clipShape(RoundedRectangle(cornerRadius: 10)).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel("Inspect finding: \(finding.title), \(finding.component)")
     }
@@ -56,7 +56,7 @@ struct FindingDetail: View {
                         Text(event.observation.component).font(.headline)
                         Text("\(event.eventType) · \(TimeText.iso(event.timestamp)) · Source: \(event.sourceCollector)").font(.caption).foregroundStyle(.secondary)
                         ChangeTable(before: event.previousState, after: event.currentState)
-                    }.padding(16).background(panel).clipShape(RoundedRectangle(cornerRadius: 10))
+                    }.padding(16).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 if evidence.events.isEmpty { Text("No supporting records are available. This is not evidence that no change occurred.").foregroundStyle(.orange) }
                 explanation("Compared with the original baseline", finding.baselineDifference, icon: "square.stack.3d.up")
@@ -71,7 +71,7 @@ struct FindingDetail: View {
                                 Text("Source: \(event.sourceCollector) · Open evidence").font(.caption)
                             }
                             Spacer(); Image(systemName: "arrow.up.right")
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(12).background(panel)
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(12).cyberPanel()
                     }.buttonStyle(.plain).foregroundStyle(accent)
                 }
             }
@@ -89,7 +89,7 @@ struct FindingDetail: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: icon).font(.headline).foregroundStyle(accent)
             Text(text.isEmpty ? "Not recorded" : text).textSelection(.enabled)
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(16).background(panel).clipShape(RoundedRectangle(cornerRadius: 10))
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(16).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -146,7 +146,7 @@ struct EventCard: View {
             else {
                 Button { model.route = .event(event.id) } label: { Label("Inspect observation", systemImage: "doc.text.magnifyingglass") }.buttonStyle(.link)
             }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(16).background(panel).clipShape(RoundedRectangle(cornerRadius: 10))
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(16).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 10))
     }
     private var details: some View {
         VStack(alignment: .leading, spacing: 12) {

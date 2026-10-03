@@ -159,6 +159,45 @@ public final class EventStore {
     public func integrityCheck() throws -> String { lock.lock(); defer { lock.unlock() }; return try scalar("PRAGMA quick_check") ?? "UNKNOWN" }
     public func metadata(_ key: String) throws -> String? { lock.lock(); defer { lock.unlock() }; return try scalar("SELECT value FROM metadata WHERE key=?", bindings: [key]) }
     public func setMetadata(_ key: String, _ value: String) throws { lock.lock(); defer { lock.unlock() }; try requireWritable(); _ = try query("INSERT OR REPLACE INTO metadata VALUES (?,?)", bindings: [key, value]) }
+    public func tripwireRules() throws -> [TripwireRule] {
+        lock.lock(); defer { lock.unlock() }
+        guard let value = try metadata("tripwire-rules-v1") else { return [] }
+        guard value.utf8.count <= 1_048_576 else { throw TripWireError.message("Tripwire configuration exceeds its size limit") }
+        let rules = try JSONDecoder.stored.decode([TripwireRule].self, from: Data(value.utf8))
+        guard rules.count <= 128, Set(rules.map(\.id)).count == rules.count else { throw TripWireError.message("Invalid tripwire configuration") }
+        return try rules.map { try $0.validated() }
+    }
+    public func saveTripwire(_ proposed: TripwireRule) throws {
+        var rule = try proposed.validated()
+        guard rule.platform == HostPlatform.current else { throw TripWireError.message("Edit this tripwire on its configured platform") }
+        rule.revision = UUID().uuidString
+        try changeTripwires(action: "SAVED", rule: rule) { rules in
+            if let i = rules.firstIndex(where: { $0.id == rule.id }) { rules[i] = rule }
+            else { guard rules.count < 128 else { throw TripWireError.message("Up to 128 tripwires are supported") }; rules.append(rule) }
+        }
+    }
+    public func deleteTripwire(id: String) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard let rule = try tripwireRules().first(where: { $0.id == id }) else { throw TripWireError.message("Tripwire not found") }
+        try changeTripwires(action: "DELETED", rule: rule) { $0.removeAll { $0.id == id } }
+    }
+    private func changeTripwires(action: String, rule: TripwireRule, change: (inout [TripwireRule]) throws -> Void) throws {
+        lock.lock(); defer { lock.unlock() }
+        try requireWritable(); try execute("BEGIN IMMEDIATE")
+        do {
+            var rules = try tripwireRules()
+            let audited = action == "DELETED" ? rules.first(where: { $0.id == rule.id }) : rule
+            guard let audited else { throw TripWireError.message("Tripwire no longer exists") }
+            try change(&rules)
+            try setMetadata("tripwire-rules-v1", String(decoding: try JSONEncoder.stable.encode(rules), as: UTF8.self))
+            let attrs = ["ruleID": audited.id, "name": audited.name, "path": audited.path, "kind": audited.kind.rawValue, "enabled": String(audited.enabled), "revision": audited.revision]
+            let observation = Observation(key: audited.id, eventClass: .configuration, component: audited.name, attributes: attrs)
+            let event = EvidenceEvent(timestamp: Date(), sourceCollector: "tripwire-configuration", eventType: action, observation: observation, currentState: action == "DELETED" ? nil : attrs, baselineStatus: .unknown,
+                evidence: ["Explicit local configuration change. No target was opened or modified. Rules apply to future observed snapshots; this is not a detection."], limitations: ["Rules alert on supported evidence and do not block access."])
+            try save(event, id: event.id, date: event.timestamp, table: "events")
+            try execute("COMMIT")
+        } catch { try? execute("ROLLBACK"); throw error }
+    }
     public func saveHealth(_ health: SensorHealth) throws { lock.lock(); defer { lock.unlock() }; try save(health, id: health.id, date: health.lastHeartbeat ?? Date(), table: "sensors") }
     public func recordGap(_ gap: CoverageGap) throws { lock.lock(); defer { lock.unlock() }; try save(gap, id: gap.id, date: gap.start, table: "gaps") }
     public func closeGaps(collector: String, at date: Date) throws {
@@ -223,6 +262,19 @@ public final class EventStore {
             for event in emitted {
                 try save(event, id: event.id, date: event.timestamp, table: "events")
                 if let finding = FindingEngine.make(event) { try save(finding, id: finding.id, date: finding.timestamp, table: "findings") }
+            }
+            // Evaluate fresh rows even when baseline metadata is unchanged. Saving
+            // a rule never turns an old inventory record into a new observation.
+            for match in TripwireMatcher.matches(snapshot, rules: try tripwireRules()) {
+                guard try metadata(match.key) == nil else { continue }
+                let event = EvidenceEvent(timestamp: snapshot.timestamp, sourceCollector: collector, eventType: "TRIPWIRE_MATCH", observation: match.observation,
+                    currentState: match.observation.attributes, baselineStatus: .unknown,
+                    evidence: ["User rule: \(match.rule.name) [\(match.rule.id)]", "Rule target: \(match.rule.path)", match.association, "Observed during this source snapshot; not a retroactive inventory match."],
+                    limitations: snapshot.descriptor.limitations + TripwireMatcher.limitations + (snapshot.complete ? [] : ["Partial source: " + snapshot.detail]), severity: .elevated)
+                let finding = match.finding(event: event)
+                try save(event, id: event.id, date: event.timestamp, table: "events")
+                try save(finding, id: finding.id, date: finding.timestamp, table: "findings")
+                try setMetadata(match.key, finding.id); emitted.append(event)
             }
             let priorHealth = try sensors().first { $0.id == collector }
             let successful = usable && (snapshot.complete || !snapshot.observations.isEmpty)

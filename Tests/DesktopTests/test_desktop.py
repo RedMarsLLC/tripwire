@@ -82,4 +82,28 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(self.engine.fresh_metric(),{})
         self.overlay.refresh(); self.assertIn("UNKNOWN",self.overlay.cpu.text())
 
+    def test_tripwire_configuration_round_trip_uses_cli_and_never_opens_target(self):
+        self.engine.start(); self.dashboard.open_page("Tripwires")
+        self.wait_for(lambda: bool(self.engine.snapshot))
+        target=Path(self.temp.name)/"never-created"/"private-data"
+        self.dashboard.rule_name.setText("Private data")
+        self.dashboard.rule_path.setText(str(target))
+        self.dashboard.rule_save.click()
+        self.wait_for(lambda: len(self.engine.snapshot.get("tripwires",[]))==1)
+        self.assertFalse(target.exists())
+        self.assertEqual(self.engine.snapshot["sampledAt"],"NEVER")
+        self.assertEqual(self.engine.snapshot["findingsCount"],0)
+        self.dashboard.list.setCurrentRow(0)
+        self.assertEqual(self.dashboard.rule_name.text(),"Private data")
+        self.dashboard.rule_enabled.setChecked(False); self.dashboard.rule_save.click()
+        self.wait_for(lambda: not self.engine.snapshot["tripwires"][0]["enabled"])
+        self.dashboard.list.setCurrentRow(0); self.dashboard.show_row(0)
+        self.dashboard.rule_delete.click()
+        self.wait_for(lambda: not self.engine.snapshot.get("tripwires"))
+        if os.environ.get("TRIPWIRE_DASHBOARD_RENDER_DIR"):
+            directory=Path(os.environ["TRIPWIRE_DASHBOARD_RENDER_DIR"]); directory.mkdir(parents=True,exist_ok=True)
+            for page in ("Tripwires","Findings"):
+                self.dashboard.open_page(page); QTest.qWait(100)
+                self.dashboard.grab().save(str(directory/("portable-"+page.lower()+".png")))
+
 if __name__=="__main__": unittest.main()

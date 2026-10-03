@@ -1,0 +1,38 @@
+# Your tripwires
+
+Open **Tripwires** in the dashboard to define boundaries for AI-associated activity. Choose a name, an absolute target path and a boundary type:
+
+- **File:** an AI-associated process is observed holding that exact regular file open.
+- **Folder:** the same observation at the folder path or inside any of its subfolders.
+- **Application:** an AI-associated open file inside a macOS `.app` bundle (or at the selected executable), or the selected application's executable observed running in a recognized AI process tree. On Linux and Windows, select the executable file rather than an app's display name or shortcut.
+
+Use **Choose…** or enter the path directly. Saving never opens the target, changes its permissions or starts collection. Enable **Start monitoring** for repeated observations. Each rule shows the relevant source status; enabled configuration is not a guarantee of live coverage. Windows file-access monitoring remains unavailable, while its process snapshots can support scoped application observations.
+
+The matching rule produces an elevated finding titled **Tripwire triggered: NAME**, with the observed path, process, association basis, detection time, why it matched, and a link to the exact evidence. The dashboard displays a dismissible banner and the overlay links to recorded findings/alerts. Dismissing the banner affects that app session only; evidence stays in the database. No OS notification permission is required. Alerts are in-app, so a closed application cannot display them.
+
+Rules are evaluated against newly collected rows, including unchanged baseline rows. Existing baseline approval never exempts a configured boundary. Saving a rule does not reclassify stale inventory as a fresh access. There is one alert per rule revision, observed process instance and path/event class, retained across collector restarts. A new process instance can alert again. Editing or re-enabling a rule starts a new revision; deleting or disabling a rule stops future matches while preserving existing findings and configuration history.
+
+## What an alert establishes
+
+File snapshots establish that a process held a regular-file descriptor at observation time. Its mode expresses capability, not a proven read, write, modification or disclosure. Descriptors can be inherited. Application matches use observed process paths, identities and bounded parent chains; process start times and matching account identities constrain ancestry. Name/path recognition can be spoofed, and observed ancestry does not prove an AI instruction or exact launch causality. No process arguments, environment values or target contents are collected.
+
+Partial snapshots can still produce alerts for actual observed rows, with their source limitations retained. Missing or unavailable evidence never becomes an absence claim. Polling can miss brief operations, detached launches, unrecognized agents, other users and protected processes. A failed sensor must be investigated in **Sensor Status / Checks**.
+
+Paths are compared lexically, with directory-component boundaries. `/private/keys` does not match `/private/keys-backup`. Windows drive paths are matched case-insensitively; Unix paths preserve case. TripWire does not resolve symlink aliases or equate hard links. A rule may miss access under a different path spelling. Filesystem roots are allowed but can generate many alerts. Configuration supports up to 128 rules per evidence store.
+
+Tripwires are alerts, not an access-control sandbox: they do not deny access, kill processes, uninstall applications or change system security settings.
+
+## CLI and storage
+
+```sh
+tripwire tripwires list --json
+tripwire tripwires save --name 'Private project' --path /absolute/private/project --kind folder
+tripwire tripwires save --name 'Sensitive app' --path /Applications/Private.app --kind application
+tripwire tripwires disable RULE-UUID
+tripwire tripwires enable RULE-UUID
+tripwire tripwires delete RULE-UUID
+```
+
+Use `save --id RULE-UUID` to edit, and `--disabled` to save a disabled rule. All commands accept `--db`. Windows uses an absolute drive path and the executable's `.exe` path for application rules. Invalid configuration is rejected before creating a store. Listing is read-only, including on first launch.
+
+Rules and deduplication markers live in the private SQLite metadata store; configuration changes are recorded as configuration events, not detection findings. All running collectors pick up changes on subsequent snapshots without a restart. The existing schema and original baseline remain intact. The Qt app invokes the same bounded local CLI commands as the terminal; it has no second rule engine, listener or web server.

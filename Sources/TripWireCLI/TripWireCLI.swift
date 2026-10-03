@@ -49,6 +49,7 @@ import TripWireTerminal
         let command = args.first ?? (TerminalRuntime.isOutputTerminal ? "tui" : "status")
         if ["help", "--help", "-h"].contains(command) { safePrint(help); return }
         if command == "metrics" { try await ResourceStream.run(once: once); return }
+        if command == "tripwires" { try TripwireCommands.run(Array(args.dropFirst()), url: url, json: json); return }
         guard ["investigate", "view", "files", "agents", "status", "sensors", "events", "findings", "network", "listeners", "processes", "applications", "persistence", "extensions", "hardware", "baseline", "explain", "doctor", "coverage", "health", "sample", "monitor", "tui", "canary"].contains(command) else { throw TripWireError.message("Unknown command. Use tripwire help") }
         if command == "baseline", args.count > 1, args[1] != "approve" { throw TripWireError.message("Baseline reset is not implemented. Only explicit fingerprint approval is supported.") }
         let changesStore = ["sample", "monitor", "canary"].contains(command) || (command == "baseline" && args.count > 1)
@@ -201,6 +202,8 @@ import TripWireTerminal
     status sensors events findings network listeners processes persistence
     applications extensions hardware baseline coverage health doctor agents files
     agent-hook [--provider codex|claude-code|cursor|generic]  Opt-in metadata stdin adapter
+    tripwires [list|save|enable|disable|delete]  Configure AI-associated boundary alerts
+    tripwires save --name NAME --path ABSOLUTE-PATH --kind file|folder|application
     explain FINDING-ID  Full evidence, limitations and investigation guidance
     baseline approve EXACT-INVENTORY-ID --fingerprint SHA256 --confirm
     canary create NAME  Opt-in harmless marker in the event-store directory

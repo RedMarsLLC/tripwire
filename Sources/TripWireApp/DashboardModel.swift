@@ -15,6 +15,8 @@ import TripWireCollectors
     @Published private(set) var sampling = false
     @Published private(set) var stopping = false
     @Published var route: DashboardRoute = .overview
+    @Published var configurationError: String?
+    @Published private var dismissedAlerts = Set<String>()
     var store: EventStore?
     let storeURL: URL
     private let collectors: [any Collector]
@@ -89,6 +91,17 @@ import TripWireCollectors
         }
     }
     func stop() { stopping = true; task?.cancel() }
+    var tripwireAlerts: [Finding] { (view?.findings ?? []).filter { $0.ruleID.hasPrefix("user-tripwire:") } }
+    var alert: Finding? { tripwireAlerts.first { !dismissedAlerts.contains($0.id) } }
+    func dismissAlert(_ finding: Finding) { dismissedAlerts.insert(finding.id) }
+    @discardableResult func saveTripwire(_ rule: TripwireRule) -> Bool {
+        do { try EventStore(url: storeURL).saveTripwire(rule); configurationError = nil; refresh(); return true }
+        catch { configurationError = String(describing: error); return false }
+    }
+    func deleteTripwire(_ rule: TripwireRule) {
+        do { try EventStore(url: storeURL).deleteTripwire(id: rule.id); configurationError = nil; refresh() }
+        catch { configurationError = String(describing: error) }
+    }
     func open(_ metric: DashboardMetric) { route = metric.destination }
     var hasSample: Bool { view?.sampledAt != nil && view?.sampledAt != "NEVER" }
     func count(_ value: Int?) -> String { guard hasSample, let value else { return "—" }; return String(value) }

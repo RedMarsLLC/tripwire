@@ -14,8 +14,10 @@ struct DesktopSnapshot: Encodable {
     var findings: [Finding]
     var inventory: [InventoryRecord]
     var events: [EvidenceEvent]
+    var tripwires: [TripwireRule]
     init(store: EventStore) throws {
         let view = try StoreView(store: store)
+        tripwires = view.tripwires
         sampledAt = view.sampledAt; coverage = view.coverage; findingsCount = view.findings.count
         inventoryTruncated = view.inventory.count > 1000; findingsTruncated = view.findings.count > 1000
         let recorded = Dictionary(view.sensors.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })

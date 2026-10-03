@@ -94,7 +94,7 @@ struct MetricInvestigationPanel: View {
                     Button("Inspect whole minute") { select(DateInterval(start: inspection.capture.date.addingTimeInterval(-60), end: inspection.capture.date)) }
                 }
                 Text("Values are sample observations. CPU and swap values summarize the preceding sampling interval, not instantaneous peaks. A spike is not automatically a finding.").font(.caption).foregroundStyle(.secondary)
-            }.padding().background(panel).clipShape(RoundedRectangle(cornerRadius: 8))
+            }.padding().cyberPanel().clipShape(RoundedRectangle(cornerRadius: 8))
             HStack(alignment: .top, spacing: 18) {
                 summary("HOST CPU", points: inspection.capture.resources.cpu.points, unit: "%")
                 summary("RAM USED ESTIMATE", points: inspection.capture.resources.usedRAMGiB.points, unit: "GiB")
@@ -121,7 +121,7 @@ struct MetricInvestigationPanel: View {
                     Text(readings.first?.name ?? id).font(.headline)
                     Text("Observed CPU peak: \(peak.map { String(format: "%@%.2f%% of host", partial ? "at least " : "", $0) } ?? "unknown") · memory footprint peak: \(memory.map { String(format: "%.2f GiB", $0 / 1_073_741_824) } ?? "unknown")")
                     Text("\(readings.count) app samples · \(id)\(partial ? " · partial visibility; missing usage is unknown" : "")").font(.caption).foregroundStyle(partial ? .orange : .secondary)
-                }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(panel)
+                }.padding(10).frame(maxWidth: .infinity, alignment: .leading).cyberPanel()
             }
             Text("Only recognized AI apps and observed descendants have resource attribution here. Other host processes, GPU work and remote model compute are not attributed. App activity and nearby events do not establish the cause of a host spike.")
                 .font(.callout).foregroundStyle(.secondary)
@@ -162,7 +162,7 @@ struct MetricInvestigationPanel: View {
                             Text("\(stamp(finding.timestamp)) · \(finding.title) ↗").fontWeight(.semibold)
                             Text("Why flagged: \(finding.whyFlagged)").font(.caption).lineLimit(3)
                         }.frame(maxWidth: .infinity, alignment: .leading)
-                    }.buttonStyle(.plain).padding(8).background(panel)
+                    }.buttonStyle(.plain).padding(8).cyberPanel()
                 }
                 if evidence.events.isEmpty { Text("No observations recorded in this window. Collection may have been stopped, unavailable or outside its scope.").foregroundStyle(.secondary) }
                 ForEach(evidence.events) { event in
@@ -171,7 +171,7 @@ struct MetricInvestigationPanel: View {
                             Text("\(stamp(event.timestamp)) · \(event.observation.component) ↗").fontWeight(.semibold)
                             Text("\(event.sourceCollector) · \(event.eventType) · open original evidence and source limitations").font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
-                    }.buttonStyle(.plain).padding(8).background(panel)
+                    }.buttonStyle(.plain).padding(8).cyberPanel()
                 }
             } else { ProgressView("Reading evidence for this time range…") }
         }

@@ -35,7 +35,7 @@ struct FileActivityPanel: View {
                     Button("Full OS audit: requirements →") { model.route = .coverage(.sensor("endpoint-security")) }
                     if !model.sampling { Button("Start monitoring") { model.begin(once: false) } }
                 }
-            }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(panel).clipShape(RoundedRectangle(cornerRadius: 10))
+            }.padding(16).frame(maxWidth: .infinity, alignment: .leading).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 10))
             HStack {
                 TextField("Search file path, app, process or review reason", text: $search).textFieldStyle(.roundedBorder)
                 Toggle("Latest check only", isOn: $latestOnly).toggleStyle(.checkbox)
@@ -69,6 +69,6 @@ struct FileActivityPanel: View {
                     } else { lookupError = "The supporting observation is unavailable. Retained metadata is shown above." }
                 } catch { lookupError = "The supporting observation could not be read: \(error)" }
             }
-        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(panel).clipShape(RoundedRectangle(cornerRadius: 10))
+        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }

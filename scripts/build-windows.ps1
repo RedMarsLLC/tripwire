@@ -15,6 +15,7 @@ if ($Test) {
 & swift build -c release --product tripwire @flags
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
 New-Item -ItemType Directory -Force dist/windows/desktop, dist/windows/resources | Out-Null
+Copy-Item LICENSE dist/windows/LICENSE
 Copy-Item .build/release/tripwire.exe dist/windows/
 Copy-Item (Join-Path $sqlite 'bin/sqlite3.dll') dist/windows/
 Copy-Item desktop/tripwire_desktop.py, desktop/requirements.txt dist/windows/desktop/

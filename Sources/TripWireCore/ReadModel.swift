@@ -8,12 +8,14 @@ public struct StoreView {
     public var gaps: [CoverageGap]
     public var databaseHealth: String
     public var sampledAt: String
+    public var tripwires: [TripwireRule]
     public init(store: EventStore) throws {
         let result = try store.readSnapshot {
-            (try store.sensors().map { $0.effective() }, try store.events(limit: 200), try store.findings(), try store.inventory(), try store.gaps(), try store.integrityCheck(), try store.metadata("lastCompletedSample"))
+            (try store.sensors().map { $0.effective() }, try store.events(limit: 200), try store.findings(), try store.inventory(), try store.gaps(), try store.integrityCheck(), try store.metadata("lastCompletedSample"), try store.tripwireRules())
         }
         sensors = result.0; events = result.1; findings = result.2; inventory = result.3; gaps = result.4; databaseHealth = result.5
         sampledAt = result.6.flatMap(Double.init).map { TimeText.iso(Date(timeIntervalSince1970: $0)) } ?? "NEVER"
+        tripwires = result.7
     }
     public var changes: Int { events.filter { ["NEW", "CHANGED", "REMOVED"].contains($0.eventType) }.count }
     public var unknowns: Int { inventory.filter { $0.baselineStatus == .unknown || $0.observation.attributes.values.contains(where: { $0.hasPrefix("UNKNOWN") || $0.hasPrefix("NOT OBSERVABLE") || $0.hasPrefix("UNAVAILABLE") }) }.count }

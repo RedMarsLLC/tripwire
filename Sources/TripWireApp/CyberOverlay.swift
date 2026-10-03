@@ -50,6 +50,10 @@ struct CyberOverlayPanel: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var hasSample: Bool { view.map { $0.sampledAt != "NEVER" } ?? false }
+    private var boundaryAlerts: [Finding] { (view?.findings ?? []).filter { $0.ruleID.hasPrefix("user-tripwire:") } }
+    private var findingsTitle: String { boundaryAlerts.isEmpty ? "FINDINGS" : "ALERTS" }
+    private var findingsValue: String { boundaryAlerts.isEmpty ? count(view?.findings.count) : String(boundaryAlerts.count) }
+    private var findingsDestination: DashboardMetric { boundaryAlerts.isEmpty ? .findings : .tripwireAlerts }
     private var sockets: Int? {
         view?.inventory.filter { [.network, .listener].contains($0.observation.eventClass) }.count
     }
@@ -132,7 +136,7 @@ struct CyberOverlayPanel: View {
     private var compactDataPanel: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center, spacing: 24) {
-                compactMetric("FINDINGS", value: count(view?.findings.count), destination: .findings, color: Self.pink)
+                compactMetric(findingsTitle, value: findingsValue, destination: findingsDestination, color: Self.pink)
                 compactMetric("CHECKS ↗", value: checkSummary.value, destination: .reporting, color: Self.cyan)
                 Spacer(minLength: 0)
                 layoutMenu
@@ -190,7 +194,7 @@ struct CyberOverlayPanel: View {
             }.font(.system(size: 8, weight: .semibold, design: .monospaced))
 
             HStack(spacing: 12) {
-                metric("FINDINGS ↗", value: count(view?.findings.count), note: "click for what and why", color: Self.pink, destination: .findings)
+                metric(findingsTitle + " ↗", value: findingsValue, note: "recorded · what and why", color: Self.pink, destination: findingsDestination)
                 metric("OBSERVED CHANGES ↗", value: count(view?.changes), note: "inspect last 200 events", color: Self.cyan, destination: .changes)
                 metric("SOCKET RECORDS ↗", value: count(sockets), note: "stored · inspect details", color: Self.cyan, destination: .sockets)
                 metric("SECURITY CHECKS ↗", value: checkSummary.value, note: checkSummary.countNote, color: Self.cyan, destination: .reporting)
@@ -251,6 +255,9 @@ struct CyberOverlayPanel: View {
             Button("Move to left edge") { moveToEdge(.left) }
             Button("Move to right edge") { moveToEdge(.right) }
             Button("Move to top edge") { moveToEdge(.top) }
+            Divider()
+            Button("Configure tripwires…") { inspect(.tripwires) }
+            Button("Recorded tripwire alerts") { inspect(.tripwireAlerts) }
         } label: {
             Text("Layout").font(.system(size: orientation == .mini ? 13 : orientation == .vertical ? 15 : compact ? 19 : 11, weight: .semibold, design: .monospaced))
         }.menuStyle(.borderlessButton).fixedSize()
@@ -280,8 +287,8 @@ struct CyberOverlayPanel: View {
                     }
                 }.frame(height: 17)
                 HStack(spacing: 10) {
-                    Button { inspect(.findings(nil)) } label: { Text("\(count(view?.findings.count)) findings ↗").foregroundStyle(Self.pink) }
-                        .help("Recorded findings. Open what was observed and why it was flagged; findings are not confirmed incidents.")
+                    Button { inspect(findingsDestination.destination) } label: { Text("\(findingsValue) \(findingsTitle.lowercased()) ↗").foregroundStyle(Self.pink) }
+                        .help("Recorded findings or tripwire alerts. Open what was observed and why it was flagged; these are not confirmed incidents.")
                     Spacer(minLength: 0)
                     Button { inspect(.coverage(.all)) } label: { Text(checkSummary.value + " ↗").foregroundStyle(Self.cyan) }
                         .help(checkSummary.catalogExplanation).accessibilityLabel("Security checks: \(checkSummary.value). Inspect details")
@@ -338,7 +345,7 @@ struct CyberOverlayPanel: View {
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(alignment: .top, spacing: 10) {
-                            verticalMetric("FINDINGS ↗", value: count(view?.findings.count), color: Self.pink) { inspect(.findings(nil)) }
+                            verticalMetric(findingsTitle + " ↗", value: findingsValue, color: Self.pink) { inspect(findingsDestination.destination) }
                             verticalMetric("CHECKS ↗", value: checkSummary.value, color: Self.cyan) { inspect(.coverage(.all)) }
                                 .help(checkSummary.catalogExplanation)
                         }
@@ -439,6 +446,8 @@ struct CyberOverlayPanel: View {
                 Button("\(event.observation.eventClass.rawValue): \(event.observation.component)") { inspect(.event(event.id)) }
             }
             Divider()
+            Button("Configure tripwires…") { inspect(.tripwires) }
+            Button("Recorded tripwire alerts") { inspect(.tripwireAlerts) }
             ForEach(sensors) { sensor in
                 Button("\(sensor.descriptor.name): \(sensor.state.rawValue)") { inspect(.coverage(.sensor(sensor.id))) }
             }

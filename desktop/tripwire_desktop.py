@@ -12,13 +12,51 @@ import time
 from PySide6.QtCore import QObject, QPoint, QRectF, QProcess, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (QApplication, QComboBox, QHBoxLayout, QLabel, QListWidget,
-                             QMainWindow, QMenu, QPlainTextEdit, QPushButton,
+                             QMainWindow, QMenu, QPlainTextEdit, QPushButton, QLineEdit, QFileDialog, QCheckBox, QFormLayout, QStackedWidget, QSplitter, QScrollArea,
                              QSystemTrayIcon, QVBoxLayout, QWidget)
 
 ROOT = Path(__file__).resolve().parent.parent
 ART = ROOT / "resources" if (ROOT / "resources").is_dir() else ROOT / "Sources" / "TripWireApp" / "Resources"
 CYAN, PINK, GREEN = "#0de8ff", "#ff24b0", "#59ffad"
 LIMIT = 8 * 1024 * 1024
+
+
+THEME = """
+QMainWindow, QWidget#surface { background:#040b11; color:#d8edf4; }
+QWidget { color:#d8edf4; font-family:monospace; font-size:12px; }
+QLabel { background:transparent; }
+QLabel#wordmark { font-size:31px; font-weight:900; font-style:italic; color:#0de8ff; }
+QLabel#tagline { font-size:9px; color:#ff24b0; }
+QLabel#eyebrow { color:#82b0be; font-size:10px; }
+QLabel#pageTitle { font-size:26px; font-weight:bold; color:#d8edf4; }
+QLabel#status { padding:12px; background:#081b24; border-left:2px solid #0de8ff; color:#a6c8d2; }
+QLabel#alert { padding:12px; color:#ff59bf; background:#261023; border:1px solid #a63077; }
+QPushButton, QComboBox { padding:8px 12px; color:#0de8ff; background:#08202b; border:1px solid #1a5865; border-radius:3px; }
+QPushButton:hover { background:#103746; border-color:#0de8ff; }
+QPushButton:pressed { background:#174656; }
+QPushButton:disabled { color:#52717b; border-color:#183139; }
+QPushButton#metric { text-align:left; font-size:16px; padding:14px; border-bottom:2px solid #ba2687; }
+QListWidget { background:#06141e; border:1px solid #173d4b; padding:5px; }
+QListWidget::item { padding:12px 8px; border-bottom:1px solid #102936; }
+QListWidget::item:selected { color:#0de8ff; background:#10303e; border-left:2px solid #ff24b0; }
+QListWidget#nav { background:transparent; border:0; font-size:11px; }
+QPlainTextEdit, QLineEdit { background:#06141e; color:#d8edf4; border:1px solid #1a4858; padding:10px; selection-background-color:#245867; }
+QLineEdit:focus { border-color:#0de8ff; }
+QWidget#sidebar { background:#050f18; border-right:1px solid #165161; }
+QScrollArea { background:transparent; border:0; }
+QSplitter::handle { background:#143541; width:1px; }
+QScrollBar:vertical { background:#06141e; width:8px; }
+QScrollBar::handle:vertical { background:#245565; min-height:24px; }
+QMenu { background:#081b24; border:1px solid #1a5865; }
+QMenu::item:selected { background:#174656; }
+"""
+
+class CyberSurface(QWidget):
+    def paintEvent(self, event):
+        painter = QPainter(self); painter.fillRect(self.rect(), QColor("#040b11"))
+        painter.setPen(QColor(13,232,255,10))
+        for x in range(0,self.width(),32): painter.drawLine(x,0,x,self.height())
+        for y in range(0,self.height(),32): painter.drawLine(0,y,self.width(),y)
 
 
 def record_key(row):
@@ -62,6 +100,7 @@ def button(text, action, parent=None):
 class Engine(QObject):
     changed = Signal()
     detail_ready = Signal(str, str)
+    config_done = Signal(bool, str)
     def __init__(self, executable: Path, database: Path | None):
         super().__init__()
         self.executable, self.database = str(executable.resolve()), database
@@ -89,6 +128,25 @@ class Engine(QObject):
         self.detail.errorOccurred.connect(lambda _: self.detail_ready.emit(self.detail_key,"Evidence unavailable: reader could not start"))
         self.detail_deadline = QTimer(self); self.detail_deadline.setSingleShot(True); self.detail_deadline.setInterval(8000)
         self.detail_deadline.timeout.connect(self.detail.kill)
+        self.config = QProcess(self); self.config_buffer = bytearray()
+        self.config.readyReadStandardOutput.connect(self.read_config)
+        self.config.readyReadStandardError.connect(self.read_config)
+        self.config.finished.connect(self.config_finished)
+        self.config.errorOccurred.connect(lambda _: self.config_done.emit(False,"Configuration writer could not start"))
+        self.config_deadline = QTimer(self); self.config_deadline.setSingleShot(True); self.config_deadline.setInterval(8000)
+        self.config_deadline.timeout.connect(self.config.kill)
+
+    def configure_rule(self, arguments):
+        if self.config.state() != QProcess.ProcessState.NotRunning: return
+        self.config_buffer.clear()
+        self.config.start(self.executable,self.arguments(["tripwires"]+arguments)); self.config_deadline.start()
+    def read_config(self):
+        self.config_buffer.extend(bytes(self.config.readAllStandardOutput())+bytes(self.config.readAllStandardError()))
+        if len(self.config_buffer)>65536: self.config.kill(); self.config_buffer.clear()
+    def config_finished(self, code, _status):
+        self.config_deadline.stop(); self.read_config()
+        self.config_done.emit(code==0,bytes(self.config_buffer).decode("utf-8","replace")[:2000] or "Configuration writer failed or timed out")
+        if code==0: self.refresh()
 
     def arguments(self, values):
         return list(values) + (["--db", str(self.database)] if self.database else [])
@@ -180,12 +238,12 @@ class Engine(QObject):
         self.changed.emit()
 
     def shutdown(self):
-        self.poll.stop(); self.deadline.stop(); self.detail_deadline.stop()
+        self.poll.stop(); self.deadline.stop(); self.detail_deadline.stop(); self.config_deadline.stop()
         if self.monitor.state() != QProcess.ProcessState.NotRunning: self.monitor.write(b"stop\n")
         if self.monitor.state() != QProcess.ProcessState.NotRunning and not self.monitor.waitForFinished(3000):
             # Only our own collector child; restart records any ungraceful stop as a gap.
             self.monitor.kill(); self.monitor.waitForFinished(1000)
-        for process in (self.reader, self.metrics, self.detail):
+        for process in (self.reader, self.metrics, self.detail, self.config):
             if process.state() != QProcess.ProcessState.NotRunning:
                 process.terminate()
                 if not process.waitForFinished(1000): process.kill(); process.waitForFinished(1000)
@@ -226,23 +284,88 @@ class CPUChart(QWidget):
 class Dashboard(QMainWindow):
     def __init__(self, engine):
         super().__init__(); self.engine = engine; self.page = "Findings"; self.rows = []; self.selection = None
-        self.setWindowTitle("TripWire"); self.resize(1050,700)
-        root = QWidget(); self.setCentralWidget(root); layout = QVBoxLayout(root)
-        toolbar = QHBoxLayout(); layout.addLayout(toolbar)
-        self.pages = QComboBox(); self.pages.addItems(["Findings","Files","Processes","Network","Kernel / extensions","Checks","Recent evidence"])
-        self.pages.currentTextChanged.connect(self.select_page); toolbar.addWidget(self.pages)
-        self.monitor_button = button("Start monitoring", engine.toggle_monitor); toolbar.addWidget(self.monitor_button)
-        self.overlay_button = button("Overlay", lambda: None); toolbar.addWidget(self.overlay_button)
-        toolbar.addWidget(button("Quit", QApplication.instance().quit))
-        self.status = QLabel(); self.status.setTextFormat(Qt.TextFormat.PlainText); self.status.setWordWrap(True); layout.addWidget(self.status)
-        content = QHBoxLayout(); layout.addLayout(content)
-        self.list = QListWidget(); self.list.currentRowChanged.connect(self.show_row); content.addWidget(self.list,2)
-        self.details = QPlainTextEdit(); self.details.setReadOnly(True); content.addWidget(self.details,3)
-        note = QLabel("Metadata only · No automatic response · Inventory is scoped and may miss brief events · AI intent remains unknown")
-        note.setWordWrap(True); layout.addWidget(note)
-        engine.changed.connect(self.refresh)
-        self.detail_key, self.detail_prefix, self.inspection = "", "", False
+        self.setWindowTitle("TripWire — RedMars"); self.resize(1240,820); self.setMinimumSize(960,620); self.setStyleSheet(THEME)
+        self.dismissed_alerts=set(); self.active_alert=None; self.editing_rule=None
+        root=CyberSurface(); root.setObjectName("surface"); self.setCentralWidget(root)
+        outer=QHBoxLayout(root); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
+        sidebar=QWidget(); sidebar.setObjectName("sidebar"); sidebar.setFixedWidth(205); side=QVBoxLayout(sidebar); side.setContentsMargins(16,24,12,16)
+        brand=QLabel("TripWire"); brand.setObjectName("wordmark"); side.addWidget(brand)
+        tagline=QLabel("YOUR CYBER WATCHDOG"); tagline.setObjectName("tagline"); side.addWidget(tagline); side.addSpacing(26)
+        self.nav=QListWidget(); self.nav.setObjectName("nav"); side.addWidget(self.nav)
+        self.pages=QComboBox(); self.pages.addItems(["Findings","Tripwire alerts","Tripwires","Files","Processes","Network","Kernel / extensions","Checks","Recent evidence"]); self.pages.hide()
+        self.nav.addItems([self.pages.itemText(i) for i in range(self.pages.count())]); self.nav.setCurrentRow(0)
+        self.nav.currentTextChanged.connect(self.pages.setCurrentText)
+        self.pages.currentTextChanged.connect(self.select_page)
+        side.addWidget(QLabel("LOCAL BY DESIGN")); credit=QLabel("RedMars LLC · MIT licensed"); credit.setObjectName("eyebrow"); side.addWidget(credit); outer.addWidget(sidebar)
+        body=QWidget(); layout=QVBoxLayout(body); layout.setContentsMargins(26,24,26,18); layout.setSpacing(16); outer.addWidget(body,1)
+        eyebrow=QLabel("OBSERVATION CONSOLE / LOCAL EVIDENCE"); eyebrow.setObjectName("eyebrow"); layout.addWidget(eyebrow)
+        toolbar=QHBoxLayout(); layout.addLayout(toolbar)
+        self.title=QLabel("Findings"); self.title.setObjectName("pageTitle"); toolbar.addWidget(self.title); toolbar.addStretch()
+        self.monitor_button=button("Start monitoring",engine.toggle_monitor); toolbar.addWidget(self.monitor_button)
+        self.overlay_button=button("Overlay ↗",lambda:None); toolbar.addWidget(self.overlay_button)
+        subtitle=QLabel("Your machine. Your boundaries. Evidence you can inspect."); subtitle.setObjectName("eyebrow"); layout.addWidget(subtitle)
+        metrics=QHBoxLayout(); layout.addLayout(metrics)
+        self.findings_metric=button("—\nRecorded findings ↗",lambda:self.open_page("Findings")); self.rules_metric=button("—\nEnabled tripwires ↗",lambda:self.open_page("Tripwires")); self.checks_metric=button("—\nReporting checks ↗",lambda:self.open_page("Checks"))
+        for widget in (self.findings_metric,self.rules_metric,self.checks_metric): widget.setObjectName("metric"); metrics.addWidget(widget,1)
+        self.status=QLabel(); self.status.setObjectName("status"); self.status.setTextFormat(Qt.TextFormat.PlainText); self.status.setWordWrap(True); layout.addWidget(self.status)
+        self.alert_box=QWidget(); alerts=QHBoxLayout(self.alert_box); alerts.setContentsMargins(0,0,0,0)
+        self.alert_label=QLabel(); self.alert_label.setObjectName("alert"); self.alert_label.setTextFormat(Qt.TextFormat.PlainText); self.alert_label.setWordWrap(True); alerts.addWidget(self.alert_label,1)
+        alerts.addWidget(button("Inspect alert ↗",self.inspect_alert)); alerts.addWidget(button("Dismiss",self.dismiss_alert)); self.alert_box.hide(); layout.addWidget(self.alert_box)
+        self.content=QSplitter(); layout.addWidget(self.content,1)
+        self.list=QListWidget(); self.list.currentRowChanged.connect(self.show_row); self.content.addWidget(self.list)
+        self.detail_stack=QStackedWidget(); self.content.addWidget(self.detail_stack)
+        self.details=QPlainTextEdit(); self.details.setReadOnly(True); self.detail_stack.addWidget(self.details)
+        self.config_panel=self.make_config_panel(); self.config_scroll=QScrollArea(); self.config_scroll.setWidgetResizable(True); self.config_scroll.setWidget(self.config_panel); self.detail_stack.addWidget(self.config_scroll); self.content.setSizes([330,600])
+        note=QLabel("Metadata only · Alerting, not blocking · Snapshots can miss brief access · AI intent remains unknown"); note.setObjectName("eyebrow"); note.setWordWrap(True); layout.addWidget(note)
+        engine.changed.connect(self.refresh); engine.config_done.connect(self.config_finished)
+        self.detail_key,self.detail_prefix,self.inspection="","",False
         engine.detail_ready.connect(self.show_detail)
+    def make_config_panel(self):
+        widget=QWidget(); form=QVBoxLayout(widget); form.setContentsMargins(20,0,0,0)
+        heading=QLabel("SET THE BOUNDARIES"); heading.setObjectName("tagline"); form.addWidget(heading)
+        form.addWidget(button("+ New tripwire",self.new_rule))
+        fields=QFormLayout(); form.addLayout(fields)
+        self.rule_name=QLineEdit(); self.rule_name.setPlaceholderText("Private credentials"); fields.addRow("Name",self.rule_name)
+        self.rule_kind=QComboBox(); self.rule_kind.addItems(["folder","file","application"]); fields.addRow("Boundary",self.rule_kind)
+        self.rule_path=QLineEdit(); self.rule_path.setPlaceholderText("Absolute target path"); fields.addRow("Path",self.rule_path)
+        form.addWidget(button("Choose path…",self.choose_rule_path))
+        self.rule_enabled=QCheckBox("Enabled for future observations"); self.rule_enabled.setChecked(True); form.addWidget(self.rule_enabled)
+        actions=QHBoxLayout(); form.addLayout(actions)
+        self.rule_save=button("Save tripwire",self.save_rule); actions.addWidget(self.rule_save)
+        self.rule_delete=button("Delete",self.delete_rule); self.rule_delete.setEnabled(False); actions.addWidget(self.rule_delete)
+        self.config_status=QLabel("Choose a boundary and save. No target is opened or modified."); self.config_status.setWordWrap(True); self.config_status.setTextFormat(Qt.TextFormat.PlainText); form.addWidget(self.config_status)
+        self.rule_coverage=QLabel(); self.rule_coverage.setWordWrap(True); self.rule_coverage.setTextFormat(Qt.TextFormat.PlainText); form.addWidget(self.rule_coverage)
+        note=QLabel("AI-associated activity only. File/folder rules match regular open-file snapshots. Applications also match sampled AI process ancestry. Brief access, aliases, detached launches and unrecognized agents may be missed. Windows file monitoring is unavailable. Saving does not start monitoring; editing or re-enabling starts a new alert cycle on the next match."); note.setWordWrap(True); note.setObjectName("eyebrow"); form.addWidget(note); form.addStretch()
+        return widget
+    def new_rule(self):
+        self.editing_rule=None; self.rule_name.clear(); self.rule_path.clear(); self.rule_kind.setCurrentText("folder"); self.rule_enabled.setChecked(True); self.rule_delete.setEnabled(False)
+        self.config_status.setText("New boundary · no target is opened or modified")
+    def choose_rule_path(self):
+        kind=self.rule_kind.currentText()
+        if kind=="folder": value=QFileDialog.getExistingDirectory(self,"Choose tripwire folder")
+        else: value,_=QFileDialog.getOpenFileName(self,"Choose application executable" if kind=="application" else "Choose tripwire file")
+        if value:
+            self.rule_path.setText(value)
+            if not self.rule_name.text(): self.rule_name.setText(Path(value).name)
+    def save_rule(self):
+        args=["save","--name",self.rule_name.text(),"--path",self.rule_path.text(),"--kind",self.rule_kind.currentText()]
+        if self.editing_rule: args.extend(["--id",self.editing_rule])
+        if not self.rule_enabled.isChecked(): args.append("--disabled")
+        self.rule_save.setEnabled(False); self.rule_delete.setEnabled(False); self.engine.configure_rule(args)
+    def delete_rule(self):
+        if self.editing_rule:
+            self.rule_save.setEnabled(False); self.rule_delete.setEnabled(False); self.engine.configure_rule(["delete",self.editing_rule])
+    def config_finished(self, success, message):
+        self.rule_save.setEnabled(True); self.rule_delete.setEnabled(bool(self.editing_rule)); self.config_status.setText(message)
+        if success: self.new_rule(); self.config_status.setText(message)
+    def inspect_alert(self):
+        if not self.active_alert: return
+        self.open_page("Findings")
+        index=next((i for i,r in enumerate(self.rows) if r.get("id")==self.active_alert["id"]),-1)
+        self.list.setCurrentRow(index)
+    def dismiss_alert(self):
+        if self.active_alert: self.dismissed_alerts.add(self.active_alert["id"])
+        self.refresh()
     def show_detail(self, key, text):
         if key != self.detail_key: return
         if key.startswith("spike:"):
@@ -250,6 +373,9 @@ class Dashboard(QMainWindow):
             except ValueError: pass
         self.details.setPlainText(self.detail_prefix+text)
     def select_page(self, page):
+        self.title.setText("Tripwires / configuration" if page=="Tripwires" else page)
+        self.nav.blockSignals(True); self.nav.setCurrentRow(self.pages.findText(page)); self.nav.blockSignals(False)
+        self.detail_stack.setCurrentIndex(1 if page=="Tripwires" else 0)
         self.page = page; self.selection = None; self.detail_key = ""; self.inspection = False; self.rows = []; self.refresh()
     def open_page(self, page="Findings"):
         self.pages.setCurrentText(page); self.showNormal(); self.raise_(); self.activateWindow()
@@ -258,7 +384,20 @@ class Dashboard(QMainWindow):
         self.status.setText(self.engine.error or f"{s.get('platform','')} · {s.get('coverage','UNKNOWN')} · Last completed check: {s.get('sampledAt','NEVER')}")
         self.monitor_button.setText("Stop monitoring" if self.engine.monitor.state() != QProcess.ProcessState.NotRunning else "Start monitoring")
         self.status.setToolTip("CPU/RAM sampling is independent of security monitoring. Missing adapters are listed under Checks.")
-        if self.page == "Findings": rows = s.get("findings",[])
+        rules=s.get("tripwires",[])
+        self.findings_metric.setText(f"{s.get('findingsCount','—')}\nRecorded findings ↗")
+        self.rules_metric.setText(f"{sum(r.get('enabled',False) for r in rules) if s else '—'}\nEnabled tripwires ↗")
+        live=sum(x.get("state") in ("ACTIVE","DEGRADED") and x.get("visibility") in ("OBSERVABLE","LIMITED") for x in s.get("sensors",[]))
+        self.checks_metric.setText(f"{live if s and not self.engine.error else '—'}\nReporting checks ↗")
+        self.active_alert=next((f for f in s.get("findings",[]) if f.get("ruleID","").startswith("user-tripwire:") and f["id"] not in self.dismissed_alerts),None)
+        self.alert_box.setVisible(bool(self.active_alert))
+        if self.active_alert: self.alert_label.setText(self.active_alert["title"]+"\n"+self.active_alert["component"]+(" · retained evidence; reader unavailable" if self.engine.error else ""))
+        source=next((x for x in s.get("sensors",[]) if x.get("descriptor",{}).get("id")=="ai-open-files"),{})
+        process_source=next((x for x in s.get("sensors",[]) if x.get("descriptor",{}).get("id")=="processes"),{})
+        self.rule_coverage.setText("FILE SOURCE: "+source.get("state","UNKNOWN")+" / "+source.get("visibility","UNKNOWN")+"\nPROCESS SOURCE: "+process_source.get("state","UNKNOWN")+" / "+process_source.get("visibility","UNKNOWN")+"\nReview Checks for coverage and next steps.")
+        if self.page == "Tripwires": rows = rules
+        elif self.page == "Tripwire alerts": rows = [f for f in s.get("findings",[]) if f.get("ruleID","").startswith("user-tripwire:")]
+        elif self.page == "Findings": rows = s.get("findings",[])
         elif self.page == "Checks": rows = s.get("sensors",[])
         elif self.page == "Recent evidence": rows = s.get("events",[])
         else:
@@ -269,10 +408,12 @@ class Dashboard(QMainWindow):
         if rows == self.rows: return
         self.rows = rows; self.list.blockSignals(True); self.list.clear()
         for row in rows:
-            title = row.get("title") or row.get("descriptor",{}).get("name") or row.get("observation",{}).get("component","Unknown")
+            title = row.get("name") or row.get("title") or row.get("descriptor",{}).get("name") or row.get("observation",{}).get("component","Unknown")
             if "state" in row: title += " · " + row["state"]
+            if "enabled" in row: title += " · " + ("ENABLED" if row["enabled"] else "DISABLED")
             self.list.addItem(title)
         index = next((i for i,r in enumerate(rows) if self.selection is not None and record_key(r) == self.selection), -1)
+        if not rows and self.page=="Tripwires": self.list.addItem("No tripwires yet.\nCreate your first boundary →")
         self.list.setCurrentRow(index); self.list.blockSignals(False)
         if self.inspection: return
         if index >= 0: self.show_row(index)
@@ -283,6 +424,9 @@ class Dashboard(QMainWindow):
         if not 0 <= index < len(self.rows): return
         self.inspection = False
         row = self.rows[index]; self.selection = record_key(row); self.detail_key = ""
+        if self.page=="Tripwires":
+            self.editing_rule=row["id"]; self.rule_name.setText(row["name"]); self.rule_path.setText(row["path"]); self.rule_kind.setCurrentText(row["kind"]); self.rule_enabled.setChecked(row["enabled"]); self.rule_delete.setEnabled(True)
+            self.config_status.setText("Editing this boundary. Existing evidence is retained."); return
         if "whyFlagged" in row:
             sections = [("WHAT WAS FOUND",row["whatHappened"]),("WHY FLAGGED",row["whyFlagged"]),("BASELINE",row["baselineDifference"]),("INTENT",row.get("intent","UNKNOWN")),("LIMITATIONS","\n".join(row.get("limitations",[]))),("NEXT STEPS","\n".join(row.get("suggestedInvestigation",[])))]
             self.details.setPlainText("\n\n".join(f"{a}\n{b}" for a,b in sections) + "\n\nEvidence IDs: " + ", ".join(row.get("eventIDs",[])))
@@ -319,7 +463,7 @@ class Overlay(QWidget):
         bar = QHBoxLayout(); layout.addLayout(bar)
         self.chooser = QComboBox(); self.chooser.addItems(list(self.LAYOUTS)); self.chooser.setCurrentText(self.mode); self.chooser.currentTextChanged.connect(self.change_layout); bar.addWidget(self.chooser)
         self.shrink = button("Shrink", self.shrink_now); bar.addWidget(self.shrink)
-        self.count = button("Findings: —",lambda:self.inspect("Findings")); layout.addWidget(self.count)
+        self.count = button("Findings: —",lambda:self.inspect("Tripwire alerts" if any(f.get("ruleID","").startswith("user-tripwire:") for f in self.engine.snapshot.get("findings",[])) else "Findings")); layout.addWidget(self.count)
         self.cpu = button("CPU UNKNOWN",lambda: self.spike(time.time()-60,time.time())); layout.addWidget(self.cpu)
         self.chart = CPUChart(engine); self.chart.selected.connect(self.spike); layout.addWidget(self.chart)
         self.memory = button("RAM UNKNOWN",self.memory_details); layout.addWidget(self.memory)
@@ -378,7 +522,9 @@ class Overlay(QWidget):
         self.dashboard.details.setPlainText("MEMORY\n"+m.get("memoryDefinition","UNKNOWN — no fresh sample")+"\n\nPRESSURE\n"+m.get("pressure","UNKNOWN")+"\n"+m.get("pressureDetail",self.engine.metric_error))
     def refresh(self):
         s,m = self.engine.snapshot,self.engine.fresh_metric()
-        self.count.setText(f"{s.get('findingsCount','—')} findings"+(" (stale)" if self.engine.error and s else " ↗"))
+        hits=[f for f in s.get("findings",[]) if f.get("ruleID","").startswith("user-tripwire:")]
+        self.count.setText((f"⚠ {len(hits)} tripwire alerts" if hits else f"{s.get('findingsCount','—')} findings")+(" (stale)" if self.engine.error and s else " ↗"))
+        self.count.setToolTip(hits[0]["title"] if hits else "Inspect recorded findings")
         cpu=m.get("cpuPercent"); self.cpu.setText("CPU / HOST  "+(f"{cpu:.1f}%" if cpu is not None else "UNKNOWN"))
         used,total=m.get("memoryUsedBytes"),m.get("memoryTotalBytes")
         self.memory.setText(f"RAM {used/2**30:.1f}/{total/2**30:.0f} GiB ⓘ" if used is not None and total else "RAM UNKNOWN ⓘ")
@@ -396,7 +542,7 @@ def main():
     args=parser.parse_args()
     executable=args.cli.resolve(strict=True)
     app=QApplication(sys.argv); app.setOrganizationName("TripWire"); app.setApplicationName("TripWireApp")
-    app.setStyleSheet(f"QMainWindow {{background:#09141c;color:#d8edf4}} QLabel,QPlainTextEdit,QListWidget {{color:#d8edf4;background:#09141c;}} QPushButton,QComboBox {{color:{CYAN};background:#142b36;padding:6px}}")
+    app.setStyleSheet(THEME)
     icon=QIcon(str(ART/"AppIcon.png" if (ART/"AppIcon.png").exists() else ROOT/"assets/branding/AppIcon.png")); app.setWindowIcon(icon)
     engine=Engine(executable,args.db); dashboard=Dashboard(engine); overlay=Overlay(engine,dashboard)
     dashboard.overlay_button.clicked.connect(overlay.showNormal)

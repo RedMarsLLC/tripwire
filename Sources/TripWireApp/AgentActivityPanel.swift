@@ -21,7 +21,7 @@ struct AgentActivityPanel: View {
                 Text(activity.lastEventText(at: now)).font(.caption.monospaced())
                 if let error = activity.error { Text(error).foregroundStyle(.orange) }
                 if activity.truncated { Text("The recent report window is truncated. Counts and session lists may be incomplete.").foregroundStyle(.orange) }
-            }.padding().frame(maxWidth: .infinity, alignment: .leading).background(panel).clipShape(RoundedRectangle(cornerRadius: 8))
+            }.padding().frame(maxWidth: .infinity, alignment: .leading).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 8))
 
             if identity == nil {
                 Text("Source connections").font(.title3.bold())
@@ -44,7 +44,7 @@ struct AgentActivityPanel: View {
                              ? "The producer must explicitly send metadata through the generic v1 adapter."
                              : "Use the provider’s supported hook setup and trust workflow. A parser being available does not enable delivery.")
                             .font(.caption).foregroundStyle(.secondary)
-                    }.padding().frame(maxWidth: .infinity, alignment: .leading).background(panel).clipShape(RoundedRectangle(cornerRadius: 8))
+                    }.padding().frame(maxWidth: .infinity, alignment: .leading).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 Text("Observed sessions").font(.title3.bold())
                 ForEach(activity.identities, id: \.identity) { agent in
@@ -57,7 +57,7 @@ struct AgentActivityPanel: View {
                             Spacer()
                             Text(agent.state(at: now)).font(.caption.monospaced())
                             Image(systemName: "arrow.up.right")
-                        }.padding().frame(maxWidth: .infinity, alignment: .leading).background(panel).clipShape(RoundedRectangle(cornerRadius: 8))
+                        }.padding().frame(maxWidth: .infinity, alignment: .leading).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 8))
                     }.buttonStyle(.plain)
                 }
             } else if let agent = activity.latestEvent {
@@ -84,7 +84,7 @@ struct AgentActivityPanel: View {
                             }
                             Spacer()
                             Text(TimeText.iso(report.timestamp)).font(.caption.monospaced())
-                        }.padding().frame(maxWidth: .infinity, alignment: .leading).background(panel).clipShape(RoundedRectangle(cornerRadius: 8))
+                        }.padding().frame(maxWidth: .infinity, alignment: .leading).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 8))
                     }.buttonStyle(.plain)
                 }
             }

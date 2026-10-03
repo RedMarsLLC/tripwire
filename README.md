@@ -8,6 +8,16 @@ This is a working, deliberately incomplete Phase 1 foundation. It records observ
 
 **macOS remains the established implementation. Linux and experimental Windows ports now pass native CI builds, engine tests and portable Qt desktop integration tests.** The ports do not yet have feature parity, standalone installers or completed interactive desktop validation. See [platform coverage, build instructions and release gates](docs/PLATFORM_SUPPORT.md).
 
+## License
+
+Copyright © 2026 **RedMars LLC**. TripWire is distributed under the [MIT License](LICENSE). Use, modify and redistribute it, including commercially, while retaining the copyright and license notice in copies or substantial portions. Third-party components retain their own licenses.
+
+## Dashboard and your tripwires
+
+The native and portable dashboards share the overlay's dark grid, cyan/magenta accents, evidence panels and navigation theme. Open **Tripwires** to add, edit, enable, disable or delete file, folder and application boundaries for **AI-associated activity**. Matches produce in-app alerts linked to what was observed, which rule matched and why it was flagged. Configuration and alerts are stored locally; baseline approval never bypasses a tripwire.
+
+Rules use the available snapshot evidence. They do not block access or provide an exhaustive file audit; Windows file monitoring remains unavailable. Start monitoring and review source status after saving. See [tripwire behavior, limitations and CLI commands](docs/TRIPWIRES.md).
+
 ## Build and run (macOS)
 
 Runs on macOS 14+. Build with Xcode 16 / Command Line Tools providing the macOS 15 SDK and Swift 6 or newer. No third-party package dependencies, server, account or API key.

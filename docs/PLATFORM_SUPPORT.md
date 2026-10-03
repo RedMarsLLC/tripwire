@@ -99,6 +99,6 @@ Before advertising general support:
 3. Add platform-specific application/startup inventories, Windows driver inventory, Windows AI file observation and per-app resource attribution. Each adapter needs bounded metadata collection and explicit permission/coverage tests.
 4. Design separately approved event providers for deeper auditing; no monitoring grants or privileged installation are implicit in this port.
 5. Produce relocatable runtime bundles/installers and a release matrix, then signing/notarization and supported-OS testing.
-6. Choose the repository license, confirm artwork redistribution terms and add Qt/SQLite/OpenSSL/Swift notices as applicable before public release. The upstream is `RedMarsLLC/tripwire` and remains private. PySide6-Essentials is pinned in `desktop/requirements.txt`; no project license has been selected automatically.
+6. The project now uses the MIT License with RedMars LLC attribution. Before public release, complete artwork provenance and Qt/SQLite/OpenSSL/Swift redistribution notices as applicable. The upstream is `RedMarsLLC/tripwire` and remains private. PySide6-Essentials is pinned in `desktop/requirements.txt`; third-party licenses remain separate from TripWire's MIT license.
 
 The macOS checkpoint is preserved on `main` and as tag `checkpoint/macos-2026-10-03` (commit `ccc3d35ee21d9f39ff36a01856d69c58b2ee601b`). Cross-platform work lives on `codex/cross-platform-foundation` until reviewed and merged.
