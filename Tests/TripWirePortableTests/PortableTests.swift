@@ -51,7 +51,7 @@ final class PortableTests: XCTestCase {
         let linked = alias.withUnsafeBufferPointer { target in original.withUnsafeBufferPointer { source in
             CreateHardLinkW(target.baseAddress, source.baseAddress, nil)
         } }
-        XCTAssertNotEqual(linked, 0, "CreateHardLinkW must create a real NTFS hard link")
+        XCTAssertTrue(linked, "CreateHardLinkW must create a real NTFS hard link")
         #else
         try FileManager.default.linkItem(at: path, to: link)
         #endif
