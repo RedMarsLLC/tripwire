@@ -1,0 +1,6 @@
+Edited the user-supplied TripWire Neon Cyber Watchdog Frame.png with the built-in image generation tool.
+
+Use case: background-extraction
+Asset type: transparent tall macOS floating overlay frame, production PNG.
+Input image: edit target, the supplied TripWire vertical frame.
+Change only the background: remove ALL dark gradient background outside the frame and inside its empty data opening, replacing those areas with true alpha transparency. Retain the exact illustrated cyan/magenta frame, TripWire lettering, tagline, lit fuse, spark, proportions and decorative details. The top logo plaque stays opaque. Preserve only a small tight neon edge glow, not the broad background haze. Crop the canvas tightly around the full frame including spark with a small transparent margin, so it is a narrow tall asset approximately 1:3 width to height. Do not redraw, redesign, add controls, add data or change text. No checkerboard pixels. Output only the isolated original frame on true transparency.

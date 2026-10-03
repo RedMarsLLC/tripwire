@@ -1,0 +1,27 @@
+# Evidence and baseline model
+
+Schema version 1. Models live in `Sources/TripWireCore/Models.swift`. Storage uses Apple's system SQLite C API; no downloaded dependencies. JSON uses sorted keys and millisecond timestamps. Event IDs are UUIDs. Tables have a primary ID, indexed observation timestamp and normalized JSON. Database creation uses exclusive/no-follow creation with mode 0600; newly created state directories use 0700. Existing database/WAL/SHM files must be regular, singly linked, user-owned and inaccessible to group/other users. Writers reject symlinked or shared-writable store directories. Rejection does not chmod existing files. Executables set umask 077. WAL and FULL synchronous writes are enabled; busy timeout is five seconds. Unknown future schemas are rejected.
+
+| Entity | Fields and meaning |
+|---|---|
+| Observation | Stable source key, event class, component, allowlisted attributes, optional process identity, observation confidence, limitations; SHA-256 fingerprint over sorted attributes |
+| ProcessIdentity | Optional PID, parent PID, UID, executable path, start time, bundle/Team ID, signing identity/status and hash; absent fields remain nil/UNKNOWN |
+| EvidenceEvent | UUID, detection time, source, event type, observation, previous/current/original-baseline states, baseline status, evidence statements, limitations, severity and minimal source/build/OS metadata |
+| InventoryRecord | Source/key, latest observation, first/last observed, observation count, last-observed presence, original baseline attributes and optional approved fingerprint, source/scope identifier |
+| SensorHealth | Descriptor/API/scope/permissions/limits; Active, Degraded, Permission Missing, Unsupported, Error, Stopped or Data Loss Detected; visibility; initialized; heartbeat/success/event timestamps; detail; optional sequence/drop/backlog values |
+| CoverageGap | Collector, start, optional end, reason and optional loss count; unknown end stays open |
+| Finding | All nine explanation sections, linked event IDs, detection timestamp, rule ID, observation confidence, severity and intent UNKNOWN |
+
+Inventory keys are source-specific: persistence path, extension bundle ID/path, hardware registry ID, process PID/start-time/path instance, or socket protocol/executable/local/remote tuple. Hardware and process identities have documented stability limitations. Socket first/last seen delimit observed presence, not exact connection start/end. Observation count is not connection frequency. Interface and external reachability are explicitly UNKNOWN in the socket attributes.
+
+`INITIAL` records establish the first successful declared-scope baseline without creating findings. Later records are `NEW`, `CHANGED`, `KNOWN` or `REMOVED`. Unchanged items update last-seen/count without duplicating evidence. New items remain NEW until explicit fingerprint approval; changed items remain CHANGED relative to the original baseline even when the immediately previous sample is identical. Returning to the original metadata reports KNOWN and retains the intervening evidence. USER APPROVED applies to one exact fingerprint; another change invalidates that status. SYSTEM EXPECTED exists in the schema but this release does not automatically assign it.
+
+A partial first inventory with unreadable enumeration/metadata is UNKNOWN and does not establish a baseline. Optional unavailable content hashes or plist fields remain explicitly unknown while readable ownership/mode metadata can establish a scoped baseline. Complete subsequent inventories infer removal only when their declared absence semantics are reliable. Permission failures and partial snapshots preserve earlier records. Persisted presence means last observed present; readers must inspect timestamps and source health.
+
+Evidence references are explicit IDs. Explanations fetch all referenced records rather than relying on the latest 200-event dashboard window. UI change counters are labeled as the last 200 events; findings and inventory are not silently truncated. Data is retained until the user manages it; automatic retention/rotation, export redaction and a long-running database-size budget are future work. Do not deploy indefinitely without disk monitoring.
+
+The store is not encrypted or cryptographically attested. An attacker who can modify the database as this user can change history. Hashing a metadata file is evidence of a sampled byte sequence, not proof of authenticity or safety. No full command output, command arguments, environment values or plist bodies are stored.
+
+Read-only commands and the GUI viewer open SQLite with READONLY and query_only. A first-run viewer uses an empty in-memory schema without creating a directory/database, and reconnects when a writer later creates the store. WAL shared-memory coordination can still require SQLite sidecar bookkeeping; viewers never write evidence, schema or file modes. The dashboard read model uses a single read transaction for a coherent view during concurrent commits. Approval requires the exact reviewed fingerprint and stores the status change and audit event in one transaction; a mismatch or failed audit write rolls back. No reset command exists.
+
+Removal inference additionally requires a usable sensor result and the same recorded source/scope on each item. Narrowing scope never turns old out-of-scope records into later removals. Older records lacking a scope marker must first be positively observed before absence can be inferred. Incomplete/failed source detail accompanies its evidence.

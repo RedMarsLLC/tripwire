@@ -1,0 +1,101 @@
+{
+  "description": "TripWire local metadata-only observer. No permission decisions, prompts, arguments, outputs or transcript access. Requires explicit Codex hook trust review.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook",
+            "timeout": 2,
+            "statusMessage": "Recording TripWire tool metadata"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook",
+            "timeout": 2,
+            "statusMessage": "Recording TripWire tool metadata"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook",
+            "timeout": 2,
+            "statusMessage": "Recording TripWire tool metadata"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook",
+            "timeout": 2,
+            "statusMessage": "Recording TripWire tool metadata"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook",
+            "timeout": 2,
+            "statusMessage": "Recording TripWire tool metadata"
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook",
+            "timeout": 2,
+            "statusMessage": "Recording TripWire tool metadata"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook",
+            "timeout": 2,
+            "statusMessage": "Recording TripWire tool metadata"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook",
+            "timeout": 2,
+            "statusMessage": "Recording TripWire tool metadata"
+          }
+        ]
+      }
+    ]
+  }
+}

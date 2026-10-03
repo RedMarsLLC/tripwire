@@ -1,0 +1,6 @@
+2 extension(s)
+--- com.apple.system_extension.network_extension
+enabled active teamID bundleID (version) name [state]
+* * ABC123XYZ9 com.example.fixture.network (1.2/12) Example Network [activated enabled]
+--- com.apple.system_extension.driver_extension
+* * XYZ987ABC1 com.example.fixture.driver (2.0/20) Example Driver [activated waiting for user]

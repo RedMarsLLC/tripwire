@@ -1,0 +1,10 @@
+Generated using the built-in image generation tool.
+
+Use case: logo-brand
+Asset type: production macOS Dock application icon, square 1024 by 1024.
+Primary request: Design a distinctive TripWire cyber watchdog app icon matching its neon cyan and hot-magenta cyberpunk overlay.
+Subject: Large bold angular interlocking "TW" monogram, crisply legible at small Dock sizes, with a single taut glowing trip wire crossing the lower portion and one small bright spark where it trips.
+Style: polished dimensional app icon, dark graphite rounded-square tile, beveled angular lettering, restrained cyan-to-magenta light, simple confident silhouette.
+Composition: centered front view, tile occupies about 88% of the square canvas with even transparent padding, large letters occupying most of tile, very few details.
+Text (verbatim): "TW". No other lettering.
+Constraints: genuinely transparent background outside the rounded-square tile, preserve clean alpha edges. No white background, no mockup, no desktop or screen, no tiny circuitry, no tagline, no watermark, no extra objects. Keep glow controlled and edges crisp.

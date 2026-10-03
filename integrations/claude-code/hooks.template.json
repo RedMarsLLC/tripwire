@@ -1,0 +1,125 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jakebrown/Repos/tripwire/dist/tripwire agent-hook --provider claude-code",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  }
+}
