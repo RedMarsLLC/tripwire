@@ -4,8 +4,8 @@ TripWire is being ported to macOS, Linux and Windows. These are **different matu
 
 | Area | macOS 14+ | Linux | Windows |
 | --- | --- | --- | --- |
-| Evidence store, baseline, findings, CLI | Existing implementation | Builds and tests on Ubuntu 24.04 ARM64 | Port implemented; native validation pending |
-| Desktop | Native SwiftUI/AppKit | Python/Qt desktop and transparent overlay | Same Python/Qt desktop; native validation pending |
+| Evidence store, baseline, findings, CLI | Existing implementation | Builds and tests on Ubuntu 24.04 ARM64 and x86-64 | Builds and tests on Windows Server 2022 x64 CI; experimental |
+| Desktop | Native SwiftUI/AppKit | Python/Qt desktop and transparent overlay; Xvfb integration tested | Same Python/Qt desktop; offscreen integration tested |
 | Process snapshots | Native APIs | Bounded `/proc` metadata | Tool Help, image path, creation time, account SID |
 | TCP/UDP inventory | Existing adapter | IPv4/IPv6 current network namespace; owner unknown | IP Helper IPv4/IPv6 owner-PID tables; process instance unverified |
 | AI-associated open files | Same-user libproc snapshots | Same-UID `/proc/PID/fd` snapshots and revalidated ancestry | Unavailable |
@@ -15,7 +15,7 @@ TripWire is being ported to macOS, Linux and Windows. These are **different matu
 | AI-app CPU, memory pressure, swap, GPU | See macOS metrics documentation | No AI-app CPU, pressure grading, swap or GPU adapter | No AI-app CPU, pressure grading, swap or GPU adapter |
 | Exact file/process event audit | Unavailable | Unavailable | Unavailable |
 
-Linux currently targets little-endian x86-64/ARM64 with procfs; Ubuntu 24.04 ARM64 is the locally tested target. Windows targets Windows 10/11 x64 initially. Other distributions, Windows ARM64, Wayland compositors and multi-monitor configurations need native validation. Missing adapters are shown in Checks before collection starts. Administrator/root access cannot supply an unimplemented adapter.
+Linux currently targets little-endian x86-64/ARM64 with procfs; Ubuntu 24.04 ARM64 is locally tested and x86-64 is tested in CI. Windows targets Windows 10/11 x64 initially; native CI runs on Windows Server 2022 x64, not an interactive consumer desktop. Other distributions, Windows ARM64, Wayland compositors and multi-monitor configurations need native validation. Missing adapters are shown in Checks before collection starts. Administrator/root access cannot supply an unimplemented adapter.
 
 ## Architecture
 
@@ -67,15 +67,19 @@ python -m venv .venv
 
 Set `TRIPWIRE_SQLITE_ROOT` to the actual vcpkg installed directory if your installation uses a different location. The script supplies SQLite header/library search paths and copies its DLL into the developer bundle. Swift runtime DLLs must remain available through the installed toolchain. This is not yet a standalone signed installer.
 
-The default store is `TripWire/events.sqlite` beneath Foundation's current-user application-support directory (with a Local AppData fallback). New directories/files receive an owner-and-SYSTEM-only DACL. Existing files must have the current account or process-token default owner (Windows can assign an owner-enabled group for elevated processes), with DACL access still restricted to the current account and SYSTEM; reparse points, hard links, network/device paths and alternate streams are rejected. Use a new dedicated directory for `--db` so TripWire can create its private DACL. It never modifies an existing directory's permissions. These checks require native NTFS validation before release.
+The default store is `TripWire/events.sqlite` beneath Foundation's current-user application-support directory (with a Local AppData fallback). New directories/files receive an owner-and-SYSTEM-only DACL. Existing files must have the current account or process-token default owner (Windows can assign an owner-enabled group for elevated processes), with DACL access still restricted to the current account and SYSTEM; reparse points, hard links, network/device paths and alternate streams are rejected. Use a new dedicated directory for `--db` so TripWire can create its private DACL. It never modifies an existing directory's permissions. Native CI verifies first-run read-only behavior, concurrent WAL reading, exclusive collector ownership and hard-link rejection. Broader ACL/reparse-point adversarial tests and a regular non-administrator desktop check remain release gates.
 
 Protected processes remain incomplete. Owner PID on a socket is not a verified process instance or AI attribution. CPU on systems with multiple processor groups remains unavailable rather than reporting one group as the entire host. No ETW session, service, minifilter or kernel driver is installed.
 
 ## Verification and release gates
 
-`.github/workflows/platforms.yml` defines native macOS, Ubuntu and Windows jobs. The Windows job is required to test the actual Swift/Windows SDK build, SQLite/DACL behavior, console and desktop process lifecycle. It has not run locally on this Mac; compiling the C adapters with MinGW is only a preliminary check. CI is not a completed check until run on a GitHub repository.
+`.github/workflows/platforms.yml` defines native macOS, Ubuntu and Windows jobs. All three passed in [GitHub Actions run 37146305659](https://github.com/RedMarsLLC/tripwire/actions/runs/37146305659) for commit `fb9efaab72144fa350f52bf907fcc279b31ee78e` on 2026-10-03:
 
-Local verification on 2026-10-03: 150 macOS Swift tests; 10 Linux Swift tests; four portable desktop integration tests both offscreen and on Xvfb/X11; release CLI PTY checks on both macOS and Linux; macOS app packaging; Linux developer bundle packaging; all four Windows C files cross-compiled against MinGW Windows headers. The canonical macOS app was rebuilt. A live restart exposed a blocked Security.framework signing lookup; process signing enrichment now has a two-second total wait budget and at most two outstanding workers, returning unknown on timeout. After relaunch, the macOS overlay again showed all 10 available checks reporting and active file snapshots. No native Windows execution has been performed.
+- macOS: 150 Swift tests, app packaging and release CLI PTY checks.
+- Ubuntu 24.04 x86-64: 10 Swift tests, developer bundle, release CLI PTY checks and four Qt desktop integration tests on Xvfb/X11.
+- Windows Server 2022 x64: eight Swift tests against the Microsoft SDK, developer bundle and four Qt desktop integration tests with the offscreen platform. These exercise actual Windows CLI processes, SQLite storage, host metrics and owned monitor shutdown; interactive console restoration, window dragging and tray behavior are not established by this run.
+
+Local verification on 2026-10-03: 150 macOS Swift tests; 10 Linux ARM64 Swift tests; four portable desktop integration tests both offscreen and on Xvfb/X11; release CLI PTY checks on both macOS and Linux; macOS app packaging; Linux developer bundle packaging; all four Windows C files cross-compiled against MinGW Windows headers. The canonical macOS app was rebuilt. A live restart exposed a blocked Security.framework signing lookup; process signing enrichment now has a two-second total wait budget and at most two outstanding workers, returning unknown on timeout. After relaunch, the macOS overlay again showed all 10 available checks reporting and active file snapshots. Native Windows verification is the separate CI run above, not a local Mac test.
 
 Local commands:
 
@@ -90,9 +94,11 @@ Portable tests cover evidence hashes, read-only first-run behavior, exclusive co
 
 Before advertising general support:
 
-1. Pass the native Windows job and test on a regular non-administrator Windows desktop.
+1. Keep all native CI jobs passing and test on a regular non-administrator Windows desktop, including broader private-store ACL/reparse-point rejection cases.
 2. Validate X11/Wayland dragging, DPI, screen edges, minimize, tray and multi-monitor behavior; validate Windows console restoration and protected-process failures.
 3. Add platform-specific application/startup inventories, Windows driver inventory, Windows AI file observation and per-app resource attribution. Each adapter needs bounded metadata collection and explicit permission/coverage tests.
 4. Design separately approved event providers for deeper auditing; no monitoring grants or privileged installation are implicit in this port.
 5. Produce relocatable runtime bundles/installers and a release matrix, then signing/notarization and supported-OS testing.
-6. Choose the repository license, confirm artwork redistribution terms, add Qt/SQLite/OpenSSL/Swift notices as applicable, and select the GitHub destination before publishing. PySide6-Essentials is pinned in `desktop/requirements.txt`; no project license has been selected automatically.
+6. Choose the repository license, confirm artwork redistribution terms and add Qt/SQLite/OpenSSL/Swift notices as applicable before public release. The upstream is `RedMarsLLC/tripwire` and remains private. PySide6-Essentials is pinned in `desktop/requirements.txt`; no project license has been selected automatically.
+
+The macOS checkpoint is preserved on `main` and as tag `checkpoint/macos-2026-10-03` (commit `ccc3d35ee21d9f39ff36a01856d69c58b2ee601b`). Cross-platform work lives on `codex/cross-platform-foundation` until reviewed and merged.

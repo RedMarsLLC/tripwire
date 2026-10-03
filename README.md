@@ -2,11 +2,11 @@
 
 A host-observation instrument with a native macOS app and an in-progress Linux/Windows port. **Observe → Baseline → Detect Change → Correlate → Explain → Preserve Evidence.**
 
-This is a working, deliberately incomplete Phase 1 foundation. It records observations, changes and visibility gaps. It does not establish that a Mac is safe, and it does not assign malicious intent. Entitlement-dependent and unimplemented sensors are explicitly unavailable.
+This is a working, deliberately incomplete Phase 1 foundation. It records observations, changes and visibility gaps. It does not establish that a computer is safe, and it does not assign malicious intent. Entitlement-dependent and unimplemented sensors are explicitly unavailable.
 
 ## Platform status
 
-**macOS remains the established implementation. Linux has a tested engine and portable Qt desktop. Windows adapters and a native CI job are implemented, but Windows validation is pending.** The ports do not yet have feature parity. See [platform coverage, build instructions and release gates](docs/PLATFORM_SUPPORT.md).
+**macOS remains the established implementation. Linux and experimental Windows ports now pass native CI builds, engine tests and portable Qt desktop integration tests.** The ports do not yet have feature parity, standalone installers or completed interactive desktop validation. See [platform coverage, build instructions and release gates](docs/PLATFORM_SUPPORT.md).
 
 ## Build and run (macOS)
 
