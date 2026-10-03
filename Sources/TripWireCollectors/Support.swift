@@ -119,10 +119,3 @@ public enum SafeFile {
     }
     public static func metadata(_ url: URL, hash: Bool) throws -> [String: String] { try inspect(url, hash: hash).metadata }
 }
-public struct UnavailableCollector: Collector {
-    public let descriptor: SensorDescriptor
-    public let reason: String
-    public let state: SensorState
-    public init(_ descriptor: SensorDescriptor, reason: String, state: SensorState = .unsupported) { self.descriptor = descriptor; self.reason = reason; self.state = state }
-    public func collect() async -> CollectorSnapshot { CollectorSnapshot(descriptor: descriptor, state: state, visibility: .unavailable, detail: reason) }
-}

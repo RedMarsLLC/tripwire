@@ -1,5 +1,12 @@
 import Foundation
+#if os(Windows)
+import ucrt
+import CTripWirePlatform
+#elseif canImport(Darwin)
 import Darwin
+#else
+import Glibc
+#endif
 import TripWireCore
 
 public enum TerminalText {
@@ -68,10 +75,10 @@ public enum ConsoleRenderer {
                 "LAST SAMPLE \(view.sampledAt)",
                 "SENSORS \(sensors) / OPEN FINDINGS \(view.findings.count)",
                 "Changes \(view.changes) (last 200 events) / Unknown observations \(view.unknowns) / Gaps \(view.gaps.count)",
-                "No findings does not establish safety. [c] source limits; ES loss UNKNOWN"
+                "No findings does not establish safety. [c] limits; event loss UNKNOWN"
             ]
         } else {
-            lines += ["Observe > Baseline > Detect Change > Correlate > Explain > Preserve Evidence", "HOST \(ProcessInfo.processInfo.hostName)  macOS \(ProcessInfo.processInfo.operatingSystemVersionString)", "MODE STORE VIEW / collection requires sample or monitor", "COVERAGE \(view.coverage)  LAST SAMPLE \(view.sampledAt)", String(repeating: "-", count: w)]
+            lines += ["Observe > Baseline > Detect Change > Correlate > Explain > Preserve Evidence", "HOST \(ProcessInfo.processInfo.hostName)  \(HostPlatform.current.displayName) \(ProcessInfo.processInfo.operatingSystemVersionString)", "MODE STORE VIEW / collection requires sample or monitor", "COVERAGE \(view.coverage)  LAST SAMPLE \(view.sampledAt)", String(repeating: "-", count: w)]
         }
         switch page {
         case "overview" where compactArtwork:
@@ -122,6 +129,9 @@ public final class InteractiveConsole {
     public let store: EventStore
     public init(store: EventStore) { self.store = store }
     public func run(ascii: Bool) throws {
+        #if os(Windows)
+        try runWindows(ascii: ascii)
+        #else
         guard isatty(STDOUT_FILENO) != 0, isatty(STDIN_FILENO) != 0, ProcessInfo.processInfo.environment["TERM"] != "dumb" else {
             print(ConsoleRenderer.render(try StoreView(store: store), ascii: true)); return
         }
@@ -139,7 +149,7 @@ public final class InteractiveConsole {
         defer { tcsetattr(STDIN_FILENO, TCSAFLUSH, &original); print("\u{1B}[?25h\u{1B}[?1049l", terminator: ""); fflush(stdout) }
         var page = "overview", selection = 0, offset = 0, previous = ""
         while !shutdown.requested {
-            var size = winsize(); _ = ioctl(STDOUT_FILENO, TIOCGWINSZ, &size)
+            var size = winsize(); _ = ioctl(STDOUT_FILENO, UInt(TIOCGWINSZ), &size)
             let width = size.ws_col > 0 ? Int(size.ws_col) : 80, height = size.ws_row > 0 ? Int(size.ws_row) : 24
             let view = try StoreView(store: store)
             selection = min(selection, max(0, view.findings.count - 1))
@@ -170,7 +180,39 @@ public final class InteractiveConsole {
                 else if let next = ["f": "findings", "e": "events", "n": "network", "p": "processes", "b": "baseline", "c": "coverage", "d": "doctor", "x": "explain", "o": "overview"][key] { page = next; offset = 0 }
             }
         }
+        #endif
     }
+    #if os(Windows)
+    private func runWindows(ascii: Bool) throws {
+        guard tw_isatty(0) != 0, tw_isatty(1) != 0, tw_console_begin() == 0 else {
+            print(ConsoleRenderer.render(try StoreView(store: store), ascii: true)); return
+        }
+        defer { print("\u{1B}[?25h\u{1B}[?1049l", terminator: ""); fflush(nil); tw_console_end() }
+        print("\u{1B}[?1049h\u{1B}[?25l", terminator: "")
+        var page = "overview", selection = 0, offset = 0, previous = ""
+        while true {
+            var width: Int32 = 80, height: Int32 = 24; tw_console_size(&width, &height)
+            let view = try StoreView(store: store)
+            selection = min(selection, max(0, view.findings.count - 1))
+            let lines: [String]
+            if page == "explain", !view.findings.isEmpty {
+                let finding = view.findings[selection]
+                let evidence = try finding.eventIDs.compactMap { try store.event(id: $0) }
+                lines = Explain.text(finding, events: evidence).components(separatedBy: "\n").map(TerminalText.safe)
+            } else {
+                lines = ConsoleRenderer.render(view, width: Int(width), height: page == "overview" ? Int(height) : 10000, ascii: ascii, page: page, selection: selection).components(separatedBy: "\n")
+            }
+            offset = min(offset, max(0, lines.count - Int(height)))
+            let screen = lines.dropFirst(offset).prefix(Int(height)).joined(separator: "\n")
+            if screen != previous { print("\u{1B}[H\u{1B}[2J" + screen, terminator: ""); fflush(nil); previous = screen }
+            let byte = tw_console_key(1000)
+            if byte == -2 || [3, 4, 113].contains(byte) { return }
+            if byte == 106 { if page == "findings" { selection += 1 }; offset += 1 }
+            else if byte == 107 { if page == "findings" { selection = max(0, selection - 1) }; offset = max(0, offset - 1) }
+            else if let next = [102: "findings", 101: "events", 110: "network", 112: "processes", 98: "baseline", 99: "coverage", 100: "doctor", 120: "explain", 111: "overview"][Int(byte)] { page = next; offset = 0 }
+        }
+    }
+    #endif
 }
 
 private final class ConsoleShutdown {
@@ -178,4 +220,14 @@ private final class ConsoleShutdown {
     private var value = false
     var requested: Bool { lock.lock(); defer { lock.unlock() }; return value }
     func request() { lock.lock(); value = true; lock.unlock() }
+}
+
+public enum TerminalRuntime {
+    public static var isOutputTerminal: Bool {
+        #if os(Windows)
+        return tw_isatty(1) != 0
+        #else
+        return isatty(STDOUT_FILENO) != 0
+        #endif
+    }
 }

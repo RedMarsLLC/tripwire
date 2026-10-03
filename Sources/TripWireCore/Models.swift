@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import CTripWirePlatform
+#endif
 
 public enum SensorState: String, Codable, CaseIterable { case active = "ACTIVE", degraded = "DEGRADED", permissionMissing = "PERMISSION MISSING", unsupported = "UNSUPPORTED", error = "ERROR", stopped = "STOPPED", dataLossDetected = "DATA LOSS DETECTED" }
 public enum Visibility: String, Codable { case available = "OBSERVABLE", limited = "LIMITED", unknown = "UNKNOWN", unavailable = "UNAVAILABLE", notObservable = "NOT OBSERVABLE" }
@@ -12,6 +16,8 @@ public struct ProcessIdentity: Codable, Equatable {
     public var pid: Int32?
     public var parentPID: Int32?
     public var uid: UInt32?
+    /// Windows account SID; a POSIX UID is not synthesized from a SID.
+    public var accountID: String?
     public var executablePath: String?
     public var launchTime: Date?
     public var bundleID: String?
@@ -19,8 +25,8 @@ public struct ProcessIdentity: Codable, Equatable {
     public var signingIdentity: String?
     public var signatureStatus: String?
     public var hash: String?
-    public init(pid: Int32? = nil, parentPID: Int32? = nil, uid: UInt32? = nil, executablePath: String? = nil, launchTime: Date? = nil, bundleID: String? = nil, teamID: String? = nil, signingIdentity: String? = nil, signatureStatus: String? = nil, hash: String? = nil) {
-        self.pid = pid; self.parentPID = parentPID; self.uid = uid; self.executablePath = executablePath; self.launchTime = launchTime; self.bundleID = bundleID; self.teamID = teamID; self.signingIdentity = signingIdentity; self.signatureStatus = signatureStatus; self.hash = hash
+    public init(pid: Int32? = nil, parentPID: Int32? = nil, uid: UInt32? = nil, accountID: String? = nil, executablePath: String? = nil, launchTime: Date? = nil, bundleID: String? = nil, teamID: String? = nil, signingIdentity: String? = nil, signatureStatus: String? = nil, hash: String? = nil) {
+        self.pid = pid; self.parentPID = parentPID; self.uid = uid; self.accountID = accountID; self.executablePath = executablePath; self.launchTime = launchTime; self.bundleID = bundleID; self.teamID = teamID; self.signingIdentity = signingIdentity; self.signatureStatus = signatureStatus; self.hash = hash
     }
     // A PID alone is never a correlation identity: it can be reused.
     public var instanceKey: String? {
@@ -158,7 +164,16 @@ public struct Finding: Codable, Identifiable {
     public var ruleID: String
 }
 public enum Digest {
-    public static func sha256(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+    public static func sha256(_ data: Data) -> String {
+        #if canImport(CryptoKit)
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        #else
+        var digest = [UInt8](repeating: 0, count: 32)
+        let result = data.withUnsafeBytes { tw_sha256($0.bindMemory(to: UInt8.self).baseAddress, $0.count, &digest) }
+        precondition(result == 0, "System SHA-256 provider unavailable; refusing to fabricate evidence fingerprints")
+        return digest.map { String(format: "%02x", $0) }.joined()
+        #endif
+    }
 }
 extension JSONEncoder {
     public static var stable: JSONEncoder { let e = JSONEncoder(); e.outputFormatting = [.sortedKeys]; e.dateEncodingStrategy = .millisecondsSince1970; return e }

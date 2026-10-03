@@ -1,12 +1,21 @@
 import Foundation
+#if os(Windows)
+import ucrt
+import CTripWirePlatform
+#elseif canImport(Darwin)
 import Darwin
+#else
+import Glibc
+#endif
 import TripWireCore
 import TripWireCollectors
 import TripWireTerminal
 
 @main struct TripWireCLI {
     static func main() async {
+        #if !os(Windows)
         umask(0o077)
+        #endif
         do { try await run() }
         catch { FileHandle.standardError.write(Data("tripwire: \(TerminalText.safe(String(describing: error)))\n".utf8)); exit(1) }
     }
@@ -34,17 +43,22 @@ import TripWireTerminal
         }
         var args = Array(CommandLine.arguments.dropFirst())
         func flag(_ name: String) -> Bool { if let i = args.firstIndex(of: name) { args.remove(at: i); return true }; return false }
-        let json = flag("--json"), ascii = flag("--ascii"), once = flag("--once")
+        let json = flag("--json"), ascii = flag("--ascii"), once = flag("--once"), controlStdin = flag("--control-stdin")
         var url = EventStore.defaultURL
         if let i = args.firstIndex(of: "--db") { guard i + 1 < args.count else { throw TripWireError.message("--db requires a file path") }; url = URL(fileURLWithPath: (args[i + 1] as NSString).expandingTildeInPath); args.removeSubrange(i...i + 1) }
-        let command = args.first ?? (isatty(STDOUT_FILENO) != 0 ? "tui" : "status")
+        let command = args.first ?? (TerminalRuntime.isOutputTerminal ? "tui" : "status")
         if ["help", "--help", "-h"].contains(command) { safePrint(help); return }
-        guard ["files", "agents", "status", "sensors", "events", "findings", "network", "listeners", "processes", "applications", "persistence", "extensions", "hardware", "baseline", "explain", "doctor", "coverage", "health", "sample", "monitor", "tui", "canary"].contains(command) else { throw TripWireError.message("Unknown command. Use tripwire help") }
+        if command == "metrics" { try await ResourceStream.run(once: once); return }
+        guard ["investigate", "view", "files", "agents", "status", "sensors", "events", "findings", "network", "listeners", "processes", "applications", "persistence", "extensions", "hardware", "baseline", "explain", "doctor", "coverage", "health", "sample", "monitor", "tui", "canary"].contains(command) else { throw TripWireError.message("Unknown command. Use tripwire help") }
         if command == "baseline", args.count > 1, args[1] != "approve" { throw TripWireError.message("Baseline reset is not implemented. Only explicit fingerprint approval is supported.") }
         let changesStore = ["sample", "monitor", "canary"].contains(command) || (command == "baseline" && args.count > 1)
         let store = try EventStore(url: url, access: changesStore ? .readWrite : .readOnly)
         func emit<T: Encodable>(_ value: T) throws { Swift.print(String(decoding: try JSONEncoder.stable.encode(value), as: UTF8.self)) }
         switch command {
+        case "view": try emit(DesktopSnapshot(store: store))
+        case "investigate":
+            guard args.count == 3, let start = ISO8601DateFormatter().date(from: args[1]), let end = ISO8601DateFormatter().date(from: args[2]), end > start, end.timeIntervalSince(start) <= 86400 else { throw TripWireError.message("Usage: tripwire investigate START-ISO8601 END-ISO8601 --json (up to 24 hours)") }
+            try emit(store.readSnapshot { try store.evidence(in: DateInterval(start: start, end: end)) })
         case "agents":
             let now = Date(), activity = try store.agentActivity()
             if json { try emit(activity.identities) } else {
@@ -66,11 +80,30 @@ import TripWireTerminal
             let interval = args.count > 1 ? Double(args[1]) ?? 15 : 15
             guard interval >= 5 && interval <= 3600 else { throw TripWireError.message("Polling interval must be 5...3600 seconds") }
             let monitor = Monitor(store: store)
-            signal(SIGINT, SIG_IGN); signal(SIGTERM, SIG_IGN)
             let stop = StopToken()
+            if controlStdin {
+                // Private parent/child control channel; never monitored process input.
+                DispatchQueue.global().async {
+                    var command = Data()
+                    do {
+                        while command.count < 5 {
+                            guard let part = try FileHandle.standardInput.read(upToCount: 5 - command.count), !part.isEmpty else { stop.request(); return }
+                            command.append(part)
+                        }
+                        if command == Data("stop\n".utf8) { stop.request() }
+                    } catch { stop.request() }
+                }
+            }
+            #if os(Windows)
+            let consoleHandler = tw_interrupt_begin() == 0
+            guard consoleHandler || controlStdin else { throw TripWireError.message("Cannot register console stop handler") }
+            defer { if consoleHandler { tw_interrupt_end() }; try? monitor.stop() }
+            #else
+            signal(SIGINT, SIG_IGN); signal(SIGTERM, SIG_IGN)
             let intSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .global()), termSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
             for source in [intSource, termSource] { source.setEventHandler { stop.request() }; source.resume() }
             defer { intSource.cancel(); termSource.cancel(); try? monitor.stop() }
+            #endif
             safePrint("TRIPWIRE foreground monitoring. Interval \(interval)s. No background installation. Ctrl-C stops.")
             repeat {
                 try await monitor.sample(continuousFiles: !once)
@@ -80,7 +113,7 @@ import TripWireTerminal
                 while !stop.stopped && Date() < until { try await Task.sleep(nanoseconds: 200_000_000) }
             } while !stop.stopped
         case "tui":
-            if once { safePrint(ConsoleRenderer.render(try StoreView(store: store), ascii: ascii || isatty(STDOUT_FILENO) == 0)) }
+            if once { safePrint(ConsoleRenderer.render(try StoreView(store: store), ascii: ascii || !TerminalRuntime.isOutputTerminal)) }
             // macOS terminals support the original Unicode artwork even when
             // LANG is unset. Use --ascii for an explicit basic-character fallback.
             else { try InteractiveConsole(store: store).run(ascii: ascii) }
@@ -116,13 +149,16 @@ import TripWireTerminal
                 if view.sensors.isEmpty { for c in CollectorRegistry.make(storeURL: url) { safePrint("\(c.descriptor.name): UNKNOWN / NOT STARTED") } }
                 safePrint("COVERAGE TIMELINE (\(view.gaps.count) stored intervals)")
                 for gap in view.gaps.prefix(30) { safePrint("\(TimeText.iso(gap.start)) -> \(TimeText.iso(gap.end)) \(gap.collector): \(gap.reason)") }
-                safePrint("Filesystem denial cannot distinguish FDA/TCC from Unix permissions. ES entitlement, FDA and privilege are separate requirements, not probed by creating a client.\nNo percentage is computed. Unknown event loss is not zero event loss.")
+                safePrint("Platform: \(HostPlatform.current.displayName). Permission denial and unimplemented adapters are distinct. No percentage is computed. Unknown event loss is not zero event loss.")
             }
         case "baseline" where args.count > 1 && args[1] == "approve":
             guard args.count == 6, args[3] == "--fingerprint", args[5] == "--confirm" else { throw TripWireError.message("Usage: tripwire baseline approve EXACT-INVENTORY-ID --fingerprint SHA256 --confirm (approves only current fingerprint)") }
             try store.approve(key: args[2], expectedFingerprint: args[4]); safePrint("Current fingerprint USER APPROVED. Original baseline and evidence retained; approval is not a safety verdict.")
         case "canary":
             guard args.count == 3, args[1] == "create", !args[2].isEmpty, args[2].count <= 60, args[2].allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }) else { throw TripWireError.message("Usage: tripwire canary create NAME (letters, digits, hyphen, underscore)") }
+            #if !os(macOS)
+            throw TripWireError.message("Canary creation is unavailable in this platform adapter")
+            #else
             let directory = url.deletingLastPathComponent().appendingPathComponent("Canaries")
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try SafeFile.requirePrivateDirectory(directory)
@@ -135,6 +171,7 @@ import TripWireTerminal
             let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
             try handle.write(contentsOf: Data("TripWire harmless local canary marker\n".utf8)); try handle.close()
             safePrint("Created \(marker.path). Run sample to establish its baseline. Reads/accesses are NOT OBSERVABLE.")
+            #endif
         default:
             let map: [String: [EventClass]] = ["files": [.file], "network": [.network, .listener], "listeners": [.listener], "processes": [.process], "applications": [.application], "persistence": [.persistence], "extensions": [.extensions], "hardware": [.hardware]]
             let records = try store.inventory().filter { map[command] == nil || map[command]!.contains($0.observation.eventClass) }
@@ -159,6 +196,8 @@ import TripWireTerminal
     tui                 Interactive store view; default when stdout is a terminal
     sample              One bounded read-only collection, then STOPPED
     monitor [SECONDS]   Foreground inventories (default 15s); file snapshots ~2s; Ctrl-C stops
+    view                Bounded read-only JSON snapshot for the desktop UI
+    metrics             JSON-lines host metrics every second; --once takes two counter samples
     status sensors events findings network listeners processes persistence
     applications extensions hardware baseline coverage health doctor agents files
     agent-hook [--provider codex|claude-code|cursor|generic]  Opt-in metadata stdin adapter
@@ -166,12 +205,20 @@ import TripWireTerminal
     baseline approve EXACT-INVENTORY-ID --fingerprint SHA256 --confirm
     canary create NAME  Opt-in harmless marker in the event-store directory
     --once              Single frame/sample for tui or monitor
+    view --json: bounded desktop snapshot. metrics [--once]: host CPU/RAM JSON stream.
+    investigate START-ISO8601 END-ISO8601 --json: bounded evidence for a time range.
     All interfaces share one SQLite store. No daemon, extension or login item is installed.
     """
 }
-private final class StopToken {
+// State is protected by the lock; the Windows interrupt flag is atomic in the C adapter.
+private final class StopToken: @unchecked Sendable {
     private let lock = NSLock(); private var value = false
-    var stopped: Bool { lock.lock(); defer { lock.unlock() }; return value }
+    var stopped: Bool {
+        #if os(Windows)
+        if tw_interrupted() != 0 { return true }
+        #endif
+        lock.lock(); defer { lock.unlock() }; return value
+    }
     func request() { lock.lock(); value = true; lock.unlock() }
 }
 private struct DoctorReport: Encodable {

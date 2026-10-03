@@ -1,6 +1,6 @@
 # TripWire engineering invariants
 
-The repository is a native macOS Swift package. Build with `swift test`; package with `sh scripts/build-app.sh`; run `python3 scripts/terminal-smoke.py dist/tripwire` for PTY checks.
+The repository is a Swift package with a native macOS app and experimental Linux/Windows adapters plus a Qt desktop. Build with `swift test`; package macOS with `sh scripts/build-app.sh`, Linux with `sh scripts/build-linux.sh`, and Windows with `scripts/build-windows.ps1`. Run `python3 scripts/terminal-smoke.py dist/tripwire` for macOS PTY checks; use the Linux binary path on Linux. See `docs/PLATFORM_SUPPORT.md` for native validation gates.
 
 - Keep `tripwire` and `TripWireApp` executable names distinct on case-insensitive filesystems.
 - Never fabricate live observations. Synthetic fixtures belong only to the test target.

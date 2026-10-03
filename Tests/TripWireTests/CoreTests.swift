@@ -178,7 +178,7 @@ final class CoreTests: XCTestCase {
                 XCTAssertTrue(screen.contains("OPEN FINDINGS \(view.findings.count)"))
                 XCTAssertTrue(screen.contains("Changes \(view.changes) (last 200 events)"))
                 XCTAssertTrue(screen.contains("No findings does not establish safety."))
-                XCTAssertTrue(screen.contains("ES loss UNKNOWN"))
+                XCTAssertTrue(screen.contains("event loss UNKNOWN"))
                 XCTAssertTrue(screen.contains("[c] coverage"))
                 XCTAssertTrue(screen.contains("[q] quit"))
                 XCTAssertTrue(screen.contains("tripwire> _"))

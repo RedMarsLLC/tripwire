@@ -26,7 +26,7 @@ public enum FindingEngine {
         case .listener: title = event.eventType == "NEW" ? "Previously unseen listening service" : "Listening service \(verb)"
         case .application: title = "Application bundle \(verb)"
         case .persistence: title = "Persistence inventory \(verb)"
-        case .extensions: title = "\(event.sourceCollector == "kernel-bundles" ? "Kernel bundle" : "System extension") \(verb)"
+        case .extensions: title = "\(event.sourceCollector == "kernel-modules" ? "Loaded kernel module" : event.sourceCollector == "kernel-bundles" ? "Kernel bundle" : "System extension") \(verb)"
         case .configuration: title = "Security configuration \(verb)"
         case .hardware: title = "Hardware \(verb)"
         case .canary: title = "Local canary \(verb)"
@@ -47,6 +47,7 @@ public enum FindingEngine {
         switch event.observation.eventClass {
         case .application: return "An application bundle appeared, changed or disappeared in a monitored applications folder. Review whether this matches software you intended to install, update or remove. The first baseline is an inventory, not an approval of existing apps."
         case .listener: return "The inventory of services accepting TCP connections changed. Review the local address, port and owning process. A listening socket does not establish external reachability or who caused it to open."
+        case .extensions where event.sourceCollector == "kernel-modules": return "The loaded Linux kernel-module inventory changed. These modules can add privileged capabilities. Polling does not identify the installer, load time or responsible agent, and built-in drivers are outside this source."
         case .extensions where event.sourceCollector == "kernel-bundles": return "The installed kernel-bundle inventory changed. Kernel extensions can add privileged system capabilities. This source observes bundle metadata; it does not establish that code was created by an agent or loaded into the kernel."
         case .extensions: return "The system-extension registration inventory changed. Extensions can add system-level capabilities; registration or reported activation does not prove runtime health."
         case .persistence: return "Startup or persistence metadata changed. These entries can affect what runs automatically; file presence alone does not prove registration or execution."

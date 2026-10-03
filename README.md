@@ -1,10 +1,14 @@
 # TripWire
 
-A native macOS host-observation instrument. **Observe → Baseline → Detect Change → Correlate → Explain → Preserve Evidence.**
+A host-observation instrument with a native macOS app and an in-progress Linux/Windows port. **Observe → Baseline → Detect Change → Correlate → Explain → Preserve Evidence.**
 
 This is a working, deliberately incomplete Phase 1 foundation. It records observations, changes and visibility gaps. It does not establish that a Mac is safe, and it does not assign malicious intent. Entitlement-dependent and unimplemented sensors are explicitly unavailable.
 
-## Build and run
+## Platform status
+
+**macOS remains the established implementation. Linux has a tested engine and portable Qt desktop. Windows adapters and a native CI job are implemented, but Windows validation is pending.** The ports do not yet have feature parity. See [platform coverage, build instructions and release gates](docs/PLATFORM_SUPPORT.md).
+
+## Build and run (macOS)
 
 Runs on macOS 14+. Build with Xcode 16 / Command Line Tools providing the macOS 15 SDK and Swift 6 or newer. No third-party package dependencies, server, account or API key.
 
@@ -77,7 +81,7 @@ tripwire canary create local-marker
 
 Copy the fingerprint printed by `baseline` along with the inventory ID. A changed fingerprint is rejected, and baseline reset is not implemented. Baseline approval changes only TripWire's local metadata for the exact observed fingerprint and records an audit event. It preserves the original baseline. The optional canary command creates only a harmless marker under the store directory. Sample once to baseline it. Only modification/removal is observable; reads and process attribution are not.
 
-## Current scope
+## Current macOS scope
 
 - Shared SQLite WAL store, normalized evidence, per-sensor health, independent collector results, source failures, staleness and stored coverage intervals.
 - Snapshot inventories for application bundles in `/Applications` and `~/Applications`; processes; TCP connections/listeners and UDP bindings; relevant persistence files; system extension registrations and third-party kernel bundle metadata; USB/whole-storage hardware; selected security posture, DNS, proxy and launchd override metadata.
@@ -92,4 +96,4 @@ The **Security Watch** dashboard page brings app, port, extension and startup-ch
 
 See the [full requirements/status matrix](docs/FEATURE_STATUS.md). Read [architecture and phases](docs/ARCHITECTURE.md), [API/permission matrix](docs/COLLECTORS.md), [data model](docs/DATA_MODEL.md), [security and visibility limits](docs/SECURITY.md), and [verification record](docs/VERIFICATION.md).
 
-Agent activity: [provider support, generic contract and activation boundaries](docs/AGENT_INTEGRATIONS.md). Run `dist/tripwire agents`. The sole canonical runnable app is `dist/TripWire.app`; validation directories contain logs, not distribution copies.
+Agent activity: [provider support, generic contract and activation boundaries](docs/AGENT_INTEGRATIONS.md). Run `dist/tripwire agents`. On macOS, the canonical runnable app is `dist/TripWire.app`; validation directories contain logs, not distribution copies.

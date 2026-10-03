@@ -1,6 +1,5 @@
 import Foundation
 import CSQLite
-import Darwin
 
 public enum StoreAccess { case readOnly, readWrite }
 
@@ -9,40 +8,29 @@ public final class EventStore {
     private let lock = NSRecursiveLock()
     private var waitingForStore = false
     public let url: URL
-    public static var defaultURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/TripWire/events.sqlite") }
+    public static var defaultURL: URL { HostPlatform.defaultStoreURL }
     public let access: StoreAccess
     public var isReadOnly: Bool { access == .readOnly }
     public init(url: URL = EventStore.defaultURL, access: StoreAccess = .readWrite) throws {
         self.url = url; self.access = access
         let directory = url.deletingLastPathComponent()
-        var attributes = stat()
-        let exists = lstat(url.path, &attributes) == 0
-        if !exists && errno != ENOENT { throw TripWireError.message("Event-store metadata is unreadable") }
+        let initialSize = try PrivateFiles.size(url.path)
+        let exists = initialSize != nil
         if exists {
-            try Self.validatePrivateFile(url.path)
-            for suffix in ["-wal", "-shm"] { try Self.validatePrivateFile(url.path + suffix, missingAllowed: true) }
+            try PrivateFiles.validate(url.path)
+            for suffix in ["-wal", "-shm"] { try PrivateFiles.validate(url.path + suffix, missingAllowed: true) }
         }
         // A first-run viewer gets an empty in-memory schema. It creates no on-disk state.
         let memoryOnly = access == .readOnly && !exists
         waitingForStore = memoryOnly
         if access == .readWrite {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            var parent = stat()
-            guard lstat(directory.path, &parent) == 0, parent.st_mode & S_IFMT == S_IFDIR, parent.st_uid == geteuid(), parent.st_mode & 0o022 == 0 else {
-                throw TripWireError.message("Evidence directory must be owned by this user, not a symlink, and not group/other writable")
-            }
-            if !exists {
-                let fd = open(url.path, O_CREAT | O_EXCL | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0o600)
-                guard fd >= 0 else { throw TripWireError.message("Could not securely create event store") }
-                close(fd)
-            }
+            try PrivateFiles.prepareDirectory(directory)
+            if !exists { try PrivateFiles.create(url.path) }
         }
         let flags: Int32 = (memoryOnly ? SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE : access == .readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE) | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW
         var sqlitePath = ":memory:"
         if !memoryOnly {
-            guard let resolved = realpath(directory.path, nil) else { throw TripWireError.message("Cannot resolve evidence directory") }
-            sqlitePath = String(cString: resolved) + "/" + url.lastPathComponent
-            free(resolved)
+            sqlitePath = try PrivateFiles.resolvedPath(url)
         }
         let opened = sqlite3_open_v2(sqlitePath, &db, flags, nil)
         guard opened == SQLITE_OK else {
@@ -52,7 +40,7 @@ public final class EventStore {
         }
         sqlite3_busy_timeout(db, 5000)
         do {
-            if exists && attributes.st_size > 0 {
+            if exists && (initialSize ?? 0) > 0 {
                 guard try scalar("SELECT value FROM metadata WHERE key='schema'") == "1" else { throw TripWireError.message("Unsupported or foreign event-store schema") }
             }
             if access == .readWrite || memoryOnly {
@@ -67,28 +55,17 @@ public final class EventStore {
             if access == .readOnly { try execute("PRAGMA query_only=ON") }
         } catch { sqlite3_close(db); db = nil; throw error }
     }
-    private static func validatePrivateFile(_ path: String, missingAllowed: Bool = false) throws {
-        var value = stat()
-        if lstat(path, &value) != 0 {
-            if missingAllowed && errno == ENOENT { return }
-            throw TripWireError.message("Cannot verify event-store file metadata")
-        }
-        guard value.st_mode & S_IFMT == S_IFREG, value.st_uid == geteuid(), value.st_nlink == 1, value.st_mode & 0o077 == 0 else {
-            throw TripWireError.message("Event-store files must be private regular files owned by this user (no symlinks, hard links or group/other access)")
-        }
-    }
     private func requireWritable() throws {
         guard !isReadOnly else { throw TripWireError.message("Read-only event-store connection cannot modify evidence") }
     }
     public func readSnapshot<T>(_ body: () throws -> T) throws -> T {
         lock.lock(); defer { lock.unlock() }
         if waitingForStore {
-            var attributes = stat()
-            if lstat(url.path, &attributes) == 0 {
+            if try PrivateFiles.size(url.path) != nil {
                 let replacement = try EventStore(url: url, access: .readOnly)
                 sqlite3_close(db); db = replacement.db; replacement.db = nil
                 waitingForStore = false
-            } else if errno != ENOENT { throw TripWireError.message("Event-store metadata became unreadable") }
+            }
         }
         try execute("BEGIN DEFERRED")
         do { let result = try body(); try execute("COMMIT"); return result }
