@@ -41,6 +41,18 @@ static TOKEN_USER *current_user(void) {
     if (user && !GetTokenInformation(token, TokenUser, user, size, &size)) { free(user); user = NULL; }
     CloseHandle(token); return user;
 }
+// SQLite creates WAL/SHM using the process token's default owner. On an
+// elevated Windows token this can be an owner-enabled group, not TokenUser.
+// Accept only that exact OS-provided owner, while still requiring a DACL that
+// grants access solely to this account and SYSTEM. Do not change any token/ACL.
+static int is_token_owner(PSID owner) {
+    HANDLE token; DWORD size = 0; int matches = 0;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return 0;
+    GetTokenInformation(token, TokenOwner, NULL, 0, &size);
+    TOKEN_OWNER *info = size && size < 65536 ? malloc(size) : NULL;
+    if (info && GetTokenInformation(token, TokenOwner, info, size, &size) && IsValidSid(info->Owner)) matches = EqualSid(owner, info->Owner);
+    free(info); CloseHandle(token); return matches;
+}
 static PSECURITY_DESCRIPTOR private_descriptor(void) {
     TOKEN_USER *user = current_user(); LPWSTR sid = NULL;
     PSECURITY_DESCRIPTOR descriptor = NULL;
@@ -59,7 +71,7 @@ static int private_handle(HANDLE handle, int directory, uint64_t *size) {
     PSID owner = NULL; PACL acl = NULL; PSECURITY_DESCRIPTOR sd = NULL;
     TOKEN_USER *user = current_user(); int valid = 0;
     if (user && GetSecurityInfo(handle, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner, NULL, &acl, NULL, &sd) == ERROR_SUCCESS &&
-        owner && EqualSid(owner, user->User.Sid) && acl && acl->AceCount > 0) {
+        owner && (EqualSid(owner, user->User.Sid) || is_token_owner(owner)) && acl && acl->AceCount > 0) {
         BYTE system[SECURITY_MAX_SID_SIZE]; DWORD systemSize = sizeof(system);
         valid = CreateWellKnownSid(WinLocalSystemSid, NULL, system, &systemSize) != 0;
         for (DWORD i = 0; valid && i < acl->AceCount; i++) {

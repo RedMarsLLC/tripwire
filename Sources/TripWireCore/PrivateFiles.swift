@@ -29,7 +29,7 @@ enum PrivateFiles {
         #if os(Windows)
         var ignored: UInt64 = 0
         guard tw_private_info(path, 0, missingAllowed ? 1 : 0, &ignored) >= 0 else {
-            throw TripWireError.message("Evidence files require the current Windows owner, a private DACL and no reparse points or hard links")
+            throw TripWireError.message("Evidence files require the current Windows account or token default owner, a private account/SYSTEM DACL and no reparse points or hard links")
         }
         #else
         var value = stat()

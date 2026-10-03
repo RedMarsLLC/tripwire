@@ -60,8 +60,11 @@ static void address4(char *out, DWORD value) {
     snprintf(out, 64, "%u.%u.%u.%u", b[0], b[1], b[2], b[3]);
 }
 static void address6(char *out, const unsigned char *b, DWORD scope) {
+    // IP Helper's TCP6/UDP6 scope DWORD is in network byte order, like its ports.
+    const unsigned char *scope_bytes = (const unsigned char *)&scope;
+    DWORD host_scope = ((DWORD)scope_bytes[0] << 24) | ((DWORD)scope_bytes[1] << 16) | ((DWORD)scope_bytes[2] << 8) | scope_bytes[3];
     int n = snprintf(out, 64, "%x:%x:%x:%x:%x:%x:%x:%x", (b[0]<<8)|b[1], (b[2]<<8)|b[3], (b[4]<<8)|b[5], (b[6]<<8)|b[7], (b[8]<<8)|b[9], (b[10]<<8)|b[11], (b[12]<<8)|b[13], (b[14]<<8)|b[15]);
-    if (scope && n > 0 && n < 50) snprintf(out+n, (size_t)(64-n), "%%%lu", (unsigned long)scope);
+    if (host_scope && n > 0 && n < 50) snprintf(out+n, (size_t)(64-n), "%%%lu", (unsigned long)host_scope);
 }
 static uint16_t port(DWORD value) { return (uint16_t)(((value & 255) << 8) | ((value >> 8) & 255)); }
 int tw_sockets(TWSocket *rows, int capacity, int *limited) {

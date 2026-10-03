@@ -1,4 +1,7 @@
 import XCTest
+#if os(Windows)
+import WinSDK
+#endif
 import Foundation
 @testable import TripWireCore
 @testable import TripWireCollectors
@@ -38,7 +41,20 @@ final class PortableTests: XCTestCase {
         let path = directory.appendingPathComponent("evidence.sqlite")
         do { _ = try EventStore(url: path) }
         let link = directory.appendingPathComponent("alias.sqlite")
+        #if os(Windows)
+        func widePath(_ url: URL) -> [WCHAR] {
+            var value = url.path
+            if value.hasPrefix("/") && value.dropFirst(2).hasPrefix(":") { value.removeFirst() }
+            return Array(value.replacingOccurrences(of: "/", with: "\\").utf16) + [0]
+        }
+        let original = widePath(path), alias = widePath(link)
+        let linked = alias.withUnsafeBufferPointer { target in original.withUnsafeBufferPointer { source in
+            CreateHardLinkW(target.baseAddress, source.baseAddress, nil)
+        } }
+        XCTAssertNotEqual(linked, 0, "CreateHardLinkW must create a real NTFS hard link")
+        #else
         try FileManager.default.linkItem(at: path, to: link)
+        #endif
         XCTAssertThrowsError(try EventStore(url: path, access: .readOnly))
         try FileManager.default.removeItem(at: link)
         #if !os(Windows)

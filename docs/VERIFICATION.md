@@ -2,7 +2,7 @@
 
 ## Environment and artifacts
 
-Built locally on Apple silicon macOS 26.5.1 using Swift 6.2.3 / Xcode SDK 26.2, targeting macOS 14+. No third-party dependencies were downloaded. Authoritative source: `/Users/jakebrown/repos/tripwire`.
+Built locally on Apple silicon macOS 26.5.1 using Swift 6.2.3 / Xcode SDK 26.2, targeting macOS 14+. No third-party dependencies were downloaded. Authoritative source: the repository checkout.
 
 Deliverables:
 

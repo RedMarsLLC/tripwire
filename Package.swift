@@ -1,8 +1,9 @@
 // swift-tools-version: 5.9
 import PackageDescription
 
-// Use the Apple SDK's SQLite on macOS; Homebrew may target a newer OS than our app.
-#if os(macOS)
+// Use SDK SQLite on macOS and explicit vcpkg flags on Windows.
+// Homebrew SQLite may target a newer macOS than our app.
+#if os(macOS) || os(Windows)
 let sqlitePkgConfig: String? = nil
 #else
 let sqlitePkgConfig: String? = "sqlite3"
