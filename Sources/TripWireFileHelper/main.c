@@ -65,16 +65,18 @@ int main(int argc, char **argv) {
     close(output[1]); close(errors[1]);
     if (result != 0) { close(output[0]); close(errors[0]); status_line("LAUNCH_FAILED"); return 71; }
     nonblocking(output[0]); nonblocking(errors[0]);
-    // Bound memory and stop on backpressure instead of silently dropping data.
+    // Bound memory. A full queue pauses child reads, applying pipe backpressure;
+    // only a stalled reader causes shutdown, not an ordinary event burst.
     unsigned char pending[524288]; size_t used = 0, offset = 0;
     char error_text[8192]; size_t error_used = 0; error_text[0] = 0;
     double last_heartbeat = uptime();
+    double last_output_progress = uptime();
     const char *finish = "STOPPED";
     int reaped = 0, child_status = 0;
     status_line("STARTED");
     while (!interrupted) {
         struct pollfd fds[] = {
-            { STDIN_FILENO, POLLIN, 0 }, { output[0], POLLIN, 0 },
+            { STDIN_FILENO, POLLIN, 0 }, { output[0], used - offset < sizeof(pending) ? POLLIN : 0, 0 },
             { errors[0], POLLIN, 0 }, { STDOUT_FILENO, used > offset ? POLLOUT : 0, 0 }
         };
         int ready = poll(fds, 4, 250);
@@ -91,6 +93,7 @@ int main(int argc, char **argv) {
             if (quit) break;
         }
         if (uptime() - last_heartbeat > 10) { finish = "APP_UNRESPONSIVE"; break; }
+        if (used > offset && uptime() - last_output_progress > 8) { finish = "BACKPRESSURE"; break; }
         if (fds[2].revents & (POLLIN | POLLHUP)) {
             char buffer[1024]; ssize_t n = read(errors[0], buffer, sizeof(buffer));
             if (n > 0 && error_used < sizeof(error_text) - 1) {
@@ -100,15 +103,14 @@ int main(int argc, char **argv) {
         }
         if (fds[3].revents & POLLOUT) {
             ssize_t n = write(STDOUT_FILENO, pending + offset, used - offset);
-            if (n > 0) offset += (size_t)n;
+            if (n > 0) { offset += (size_t)n; last_output_progress = uptime(); }
             else if (n < 0 && errno != EAGAIN && errno != EINTR) { finish = "PIPE_FAILED"; break; }
             if (offset == used) offset = used = 0;
         }
         if (fds[1].revents & POLLIN) {
             if (offset) { memmove(pending, pending + offset, used - offset); used -= offset; offset = 0; }
-            if (used == sizeof(pending)) { finish = "BACKPRESSURE"; break; }
-            ssize_t n = read(output[0], pending + used, sizeof(pending) - used);
-            if (n > 0) used += (size_t)n;
+            ssize_t n = used < sizeof(pending) ? read(output[0], pending + used, sizeof(pending) - used) : -1;
+            if (n > 0) { if (used == 0) last_output_progress = uptime(); used += (size_t)n; }
             else if (n < 0 && errno != EAGAIN && errno != EINTR) { finish = "PIPE_FAILED"; break; }
         }
         pid_t ended = waitpid(child, &child_status, WNOHANG);

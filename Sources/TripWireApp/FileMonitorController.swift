@@ -37,7 +37,7 @@ enum FileHelperStatus: String {
         case .launch: return "The helper could not start /usr/bin/eslogger. File events are unavailable on this system."
         case .exited: return "The macOS event source exited. File events are no longer being monitored. Check Full Disk Access, then retry."
         case .pipe: return "The file-event connection failed. Coverage is interrupted; retry file monitoring."
-        case .backpressure: return "The event stream exceeded the bounded buffer. Monitoring stopped instead of silently dropping reports. Missed activity is unknown; retry."
+        case .backpressure: return "TripWire could not drain the event buffer for eight seconds. Monitoring stopped; missed activity is unknown. Retry file monitoring."
         case .unresponsive: return "TripWire stopped responding to the helper. The helper stopped the event source; coverage is interrupted."
         }
     }
