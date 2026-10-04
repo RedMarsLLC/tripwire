@@ -9,13 +9,24 @@ public struct StoreView {
     public var databaseHealth: String
     public var sampledAt: String
     public var tripwires: [TripwireRule]
+    public var findingReviews: [FindingReview]
+    private var latestReviewByFinding: [String: FindingReview]
+    public func assessment(for finding: Finding) -> FindingAssessment { FindingAssessment(finding: finding, reviews: latestReviewByFinding[finding.id].map { [$0] } ?? []) }
+    public var openFindings: [Finding] { findings.filter { assessment(for: $0).status == .open } }
+    public var riskCounts: [RiskLevel: Int] {
+        var counts = Dictionary(uniqueKeysWithValues: RiskLevel.allCases.map { ($0, 0) })
+        for finding in findings { let review = assessment(for: finding); if review.status == .open { counts[review.level, default: 0] += 1 } }
+        return counts
+    }
     public init(store: EventStore) throws {
         let result = try store.readSnapshot {
-            (try store.sensors().map { $0.effective() }, try store.events(limit: 200), try store.findings(), try store.inventory(), try store.gaps(), try store.integrityCheck(), try store.metadata("lastCompletedSample"), try store.tripwireRules())
+            (try store.sensors().map { $0.effective(staleAfter: ["file-open-events", "ai-open-files"].contains($0.id) ? 10 : 90) }, try store.events(limit: 200), try store.findings(), try store.inventory(), try store.gaps(), try store.integrityCheck(), try store.metadata("lastCompletedSample"), try store.tripwireRules(), try store.findingReviews())
         }
         sensors = result.0; events = result.1; findings = result.2; inventory = result.3; gaps = result.4; databaseHealth = result.5
         sampledAt = result.6.flatMap(Double.init).map { TimeText.iso(Date(timeIntervalSince1970: $0)) } ?? "NEVER"
         tripwires = result.7
+        findingReviews = result.8
+        latestReviewByFinding = Dictionary(findingReviews.map { ($0.findingID, $0) }, uniquingKeysWith: { first, _ in first })
     }
     public var changes: Int { events.filter { ["NEW", "CHANGED", "REMOVED"].contains($0.eventType) }.count }
     public var unknowns: Int { inventory.filter { $0.baselineStatus == .unknown || $0.observation.attributes.values.contains(where: { $0.hasPrefix("UNKNOWN") || $0.hasPrefix("NOT OBSERVABLE") || $0.hasPrefix("UNAVAILABLE") }) }.count }
@@ -37,6 +48,11 @@ public enum Explain {
         let evidence = related.map { e in
             "EVENT \(e.id) / SOURCE \(e.sourceCollector)\n" + e.evidence.joined(separator: "\n") + "\n" + BaselineEngine.differences(e.previousState, e.currentState).joined(separator: "\n")
         }.joined(separator: "\n\n")
+        let associations = related.compactMap { event -> String? in
+            guard let app = event.observation.attributes["associatedApp"], let basis = event.observation.attributes["associationBasis"] else { return nil }
+            return "\(app): \(basis)"
+        }
+        let attribution = associations.isEmpty ? "UNKNOWN. Nearby activity or a resource spike alone does not prove causation." : Array(Set(associations)).sorted().joined(separator: "\n") + "\nAssociation is not proof of an AI instruction, user authorization or malicious intent."
         return """
         \(finding.title.uppercased())
         ID \(finding.id)
@@ -48,7 +64,7 @@ public enum Explain {
         \(finding.whyFlagged)
 
         RESPONSIBLE AGENT
-        UNKNOWN. Current inventories do not identify the agent responsible for a change. A socket owner, active AI session or nearby resource spike alone does not prove causation.
+        \(attribution)
 
         PROCESS / COMPONENT
         \(finding.component)

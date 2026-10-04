@@ -1,5 +1,7 @@
 """Offscreen UI + actual CLI integration checks; no fixtures in live targets."""
 import json
+import sqlite3
+import uuid
 import os
 from pathlib import Path
 import sys
@@ -81,6 +83,35 @@ class DesktopTests(unittest.TestCase):
         self.engine.metrics_failed("Sampler stopped")
         self.assertEqual(self.engine.fresh_metric(),{})
         self.overlay.refresh(); self.assertIn("UNKNOWN",self.overlay.cpu.text())
+
+    def test_risk_review_counts_evidence_and_future_classifications(self):
+        self.engine.start(); self.wait_for(lambda: bool(self.engine.snapshot))
+        # Only this test target writes synthetic findings into its temporary DB.
+        self.engine.configure_rule(["save","--name","TEST boundary","--path",str(Path(self.temp.name)/"never-opened"),"--kind","folder"])
+        self.wait_for(lambda: bool(self.engine.snapshot.get("tripwires")))
+        fixture_id=str(uuid.uuid4())
+        finding={"id":fixture_id,"timestamp":time.time()*1000,"title":"TEST ONLY: boundary opened","whatHappened":"Synthetic open-event evidence for this UI test.","whyFlagged":"An enabled test boundary matched.","component":"TEST ONLY protected path","eventIDs":[],"baselineDifference":"Fixture","confidence":"MODERATE","severity":"ELEVATED","limitations":["TEST ONLY; no live observation"],"suggestedInvestigation":["Inspect the fixture evidence"],"intent":"UNKNOWN","ruleID":"test-fixture"}
+        with sqlite3.connect(self.engine.database) as connection:
+            connection.execute("INSERT INTO findings VALUES (?,?,?)",(fixture_id,finding["timestamp"]/1000,json.dumps(finding)))
+        self.engine.refresh(); self.wait_for(lambda: self.engine.snapshot.get("riskCounts",{}).get("high")==1)
+        self.dashboard.open_page("Overview"); center=self.dashboard.risk_center
+        self.wait_for(lambda:center.selected==fixture_id)
+        center.filter_level("high"); self.assertEqual(len(center.rows),1)
+        center.risk.setCurrentIndex(center.risk.findData("low")); center.status.setCurrentIndex(center.status.findData("false-positive")); center.reason.setText("TEST: this activity was authorized")
+        center.save.click(); self.wait_for(lambda:self.engine.snapshot.get("reviewedCount")==1)
+        self.assertEqual(sum(self.engine.snapshot["riskCounts"].values()),0)
+        center.filter_level(None); center.scope.setCurrentText("Reviewed"); self.assertEqual(center.selected,fixture_id)
+        self.assertEqual(center.risk.currentData(),"low"); self.assertEqual(center.status.currentData(),"false-positive")
+        self.wait_for(lambda:"TEST: this activity was authorized" in center.history_text.text())
+        with sqlite3.connect(self.engine.database) as connection:
+            retained=json.loads(connection.execute("SELECT json FROM findings WHERE id=?",(fixture_id,)).fetchone()[0])
+            self.assertEqual(retained,finding)
+        center.risk.setCurrentIndex(center.risk.findData("critical")); center.status.setCurrentIndex(center.status.findData("open")); center.reason.setText("TEST: reopen for additional investigation"); center.save.click()
+        self.wait_for(lambda:self.engine.snapshot.get("riskCounts",{}).get("critical")==1)
+        center.scope.setCurrentText("Open"); self.assertEqual(center.selected,fixture_id)
+        if os.environ.get("TRIPWIRE_DASHBOARD_RENDER_DIR"):
+            directory=Path(os.environ["TRIPWIRE_DASHBOARD_RENDER_DIR"]); directory.mkdir(parents=True,exist_ok=True)
+            self.dashboard.show(); QTest.qWait(150); self.dashboard.grab().save(str(directory/"portable-risk.png"))
 
     def test_tripwire_configuration_round_trip_uses_cli_and_never_opens_target(self):
         self.engine.start(); self.dashboard.open_page("Tripwires")

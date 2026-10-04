@@ -6,7 +6,7 @@ import TripWireCore
 public struct AIFileAccessCollector: Collector {
     public static let id = "ai-open-files"
     public let descriptor = SensorDescriptor(id, "AI open-file snapshots", source: "libproc process identities and open vnode descriptors",
-        monitors: "Path metadata for files held open by recognized same-user AI desktop apps and observed descendants; every 2 seconds while monitoring",
+        monitors: "Path metadata for regular files and directories held open by recognized same-user AI desktop apps and observed descendants; every 2 seconds while monitoring",
         limitations: [
             "Snapshots miss short-lived opens, closed files, memory-mapped files after close, and activity between checks. This is not a read/write event audit; loss is UNKNOWN.",
             "Read/write mode describes an open descriptor's capability, not proof that bytes were read or written. A descriptor can be inherited or passed from another process.",
@@ -23,6 +23,7 @@ public struct AIFileAccessCollector: Collector {
     struct ProcessList { var values: [AIAppResourceSampler.ProcessMetadata]; var partial: Bool; var failed = false }
     struct OpenFile: Equatable {
         var path: String; var device: UInt32; var inode: UInt64; var flags: UInt32
+        var isDirectory = false
         var mode: String {
             if flags & UInt32(O_EVTONLY) != 0 { return "Event-only (no read/write capability)" }
             switch flags & 3 {
@@ -64,15 +65,16 @@ public struct AIFileAccessCollector: Collector {
             guard read == MemoryLayout<vnode_fdinfowithpath>.size else {
                 result.partial = true; result.denied = result.denied || errno == EPERM || errno == EACCES; continue
             }
-            // Ignore sockets, devices and directories. The API returns metadata without opening the file.
-            guard info.pvip.vip_vi.vi_stat.vst_mode & UInt16(S_IFMT) == UInt16(S_IFREG) else { continue }
+            // Directory handles matter for folder tripwires too. Never open the target.
+            let kind = info.pvip.vip_vi.vi_stat.vst_mode & UInt16(S_IFMT)
+            guard kind == UInt16(S_IFREG) || kind == UInt16(S_IFDIR) else { continue }
             let path = withUnsafeBytes(of: info.pvip.vip_path) { buffer -> String? in
                 guard let end = buffer.firstIndex(of: 0), end > 0, end < buffer.count - 1 else { return nil }
                 return String(bytes: buffer[..<end], encoding: .utf8)
             }
             guard let path, path.hasPrefix("/") else { result.partial = true; continue }
             result.values.append(OpenFile(path: path, device: info.pvip.vip_vi.vi_stat.vst_dev,
-                                          inode: info.pvip.vip_vi.vi_stat.vst_ino, flags: info.pfi.fi_openflags))
+                                          inode: info.pvip.vip_vi.vi_stat.vst_ino, flags: info.pfi.fi_openflags, isDirectory: kind == UInt16(S_IFDIR)))
         }
         return result
     }
@@ -120,6 +122,7 @@ public struct AIFileAccessCollector: Collector {
                 let key = Digest.sha256(Data("\(process.pid):\(process.started):\(process.path):\(file.device):\(file.inode):\(file.path):\(file.flags & (3 | UInt32(O_EVTONLY)))".utf8))
                 if observations[key] == nil && observations.count >= maxFiles { partial = true; continue }
                 var attrs = ["path": file.path, "associatedApp": app.name, "associatedAppID": app.id,
+                             "objectType": file.isDirectory ? "Directory" : "Regular file",
                              "openMode": file.mode, "executable": process.path, "pid": String(process.pid),
                              "associationBasis": process.path.hasPrefix(app.bundlePath + "/") ? "Executable inside recognized app bundle" : "Observed parent chain to recognized app bundle"]
                 if let reason = FileAccessReview.reason(path: file.path, home: home) { attrs["reviewReason"] = reason }

@@ -21,8 +21,9 @@ struct TripwiresPanel: View {
                 MetricButton("Enabled boundaries", model.view == nil ? "—" : String(rules.filter(\.enabled).count), note: "Configuration is not live coverage", icon: "scope") { editing = true }
                 MetricButton("Recorded alerts", model.view == nil ? "—" : String(model.tripwireAlerts.count), note: "Inspect the rule and supporting evidence", icon: "bolt.shield") { model.route = .tripwireAlerts }
             }
+            FileEventSetup()
             Label("Alerting only · No access blocking · AI-associated activity only", systemImage: "info.circle").foregroundStyle(accent)
-            Text("File rules use open-file snapshots on macOS and Linux. Application rules also inspect sampled AI process ancestry. Brief access, detached launches, aliases and unrecognized agents may be missed. An open file does not prove a read or write. Windows file-access monitoring remains unavailable.").font(.callout).foregroundStyle(CyberTheme.muted)
+            Text("File rules use file/directory handle snapshots on macOS and Linux. The separately authorized macOS foreground event bridge can also capture brief opens. Application rules also inspect sampled AI process ancestry. Brief access, detached launches, aliases and unrecognized agents may be missed. An open file does not prove a read or write. Windows file-access monitoring remains unavailable.").font(.callout).foregroundStyle(CyberTheme.muted)
             if let error = model.configurationError { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
             if editing { editor }
             if rules.isEmpty && !editing {
@@ -80,9 +81,10 @@ struct TripwiresPanel: View {
     private func coverage(_ rule: TripwireRule) -> String {
         if !rule.enabled { return "Disabled · retained alerts remain available" }
         if model.readError != nil { return "Coverage unknown · evidence store is unreadable" }
+        if model.fileEventsReporting { return "Open-event feed reporting · scoped AI attribution and diagnostic source limits apply" }
         let ids = rule.kind == .application ? ["ai-open-files", "processes"] : ["ai-open-files"]
         let reporting = model.sensors.filter { ids.contains($0.id) && SensorPresentation($0).kind == .reporting }
-        return reporting.isEmpty ? "Awaiting supported checks · start monitoring and inspect Sensor Status" : "Observing snapshots · \(reporting.map { $0.descriptor.name }.joined(separator: ", ")) · gaps remain possible"
+        return reporting.isEmpty ? "Awaiting supported checks · start monitoring and inspect Sensor Status" : "SNAPSHOTS ONLY · brief file opens can be missed · enable event capture above"
     }
     private func choose() {
         let picker = NSOpenPanel(); picker.title = "Choose a tripwire boundary"

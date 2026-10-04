@@ -73,7 +73,7 @@ public enum ConsoleRenderer {
                 "MODE STORE VIEW / collection requires sample or monitor",
                 "COVERAGE \(view.coverage)",
                 "LAST SAMPLE \(view.sampledAt)",
-                "SENSORS \(sensors) / OPEN FINDINGS \(view.findings.count)",
+                "SENSORS \(sensors) / OPEN FINDINGS \(view.openFindings.count)",
                 "Changes \(view.changes) (last 200 events) / Unknown observations \(view.unknowns) / Gaps \(view.gaps.count)",
                 "No findings does not establish safety. [c] limits; event loss UNKNOWN"
             ]
@@ -89,15 +89,15 @@ public enum ConsoleRenderer {
             lines += ["SENSOR STATUS", "\(view.sensors.filter { [.active, .degraded].contains($0.effective().state) }.count) CHECKS REPORTING; scopes differ, not a coverage percentage"]
             lines += view.sensors.prefix(full ? 16 : 5).map { "\(TerminalText.fit($0.descriptor.name, width: min(37, max(10, w - 24)))) \($0.state.rawValue) / \($0.visibility.rawValue)" }
             if view.sensors.isEmpty { lines.append("UNKNOWN / No collectors have reported") }
-            lines += [String(repeating: "-", count: w), "Trips \(view.findings.count)   Open findings \(view.findings.count)   Changes \(view.changes) (last 200 events)", "Unknown observations \(view.unknowns)   Stored gaps \(view.gaps.count)", "LIVE TRIPWIRE (stored observations; absence is not safety)"]
+            lines += [String(repeating: "-", count: w), "Trips \(view.findings.count)   Open findings \(view.openFindings.count)   Changes \(view.changes) (last 200 events)", "Unknown observations \(view.unknowns)   Stored gaps \(view.gaps.count)", "LIVE TRIPWIRE (stored observations; absence is not safety)"]
             lines += view.events.prefix(full ? 6 : 3).map(eventLine)
-            if let finding = view.findings.first { lines += ["TRIPPED: \(finding.title)", "Observation confidence: \(finding.confidence.rawValue) / Intent: UNKNOWN", "Evidence records: \(finding.eventIDs.count) / [x] explanation"] }
+            if let finding = view.openFindings.first { lines += ["TRIPPED: \(finding.title)", "Observation confidence: \(finding.confidence.rawValue) / Intent: UNKNOWN", "Evidence records: \(finding.eventIDs.count) / [x] explanation"] }
             else { lines.append("NO OPEN FINDINGS / monitoring limitations still apply") }
             lines += ["Event store: \(view.databaseHealth)  ES event loss: UNKNOWN (no client)"]
         case "findings", "explain":
             lines.append("FINDINGS / j,k select / x explain / o overview")
-            for (i, f) in view.findings.enumerated() { lines.append("\(i == selection ? ">" : " ") \(i + 1). \(f.title) [\(f.confidence.rawValue)] \(f.id)") }
-            if view.findings.isEmpty { lines.append("NO OPEN FINDINGS") }
+            for (i, f) in view.findings.enumerated() { let review = view.assessment(for: f); lines.append("\(i == selection ? ">" : " ") \(i + 1). \(f.title) [\(review.level.label)/\(review.status.label)] \(f.id)") }
+            if view.findings.isEmpty { lines.append("NO RECORDED FINDINGS") }
         case "events": lines += ["LIVE TRIPWIRE / most recent stored observations"] + view.events.map(eventLine)
         case "coverage", "doctor":
             lines += ["\(page.uppercased()) / explicit sensor scopes", "Database quick_check: \(view.databaseHealth)", "ES availability: UNAVAILABLE / entitlement-dependent adapter not installed", "Network Extension: UNAVAILABLE / provider not installed", "Dropped events: UNKNOWN for unavailable event streams", "Queue backlog: UNKNOWN for unavailable event streams"]

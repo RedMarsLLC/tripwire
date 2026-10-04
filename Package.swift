@@ -42,6 +42,6 @@ let collectorSources = ["Windows", "PortableRegistry.swift", "PortableMetrics.sw
 let otherPlatform = "Windows"
 let collectorSources = ["Linux", "PortableRegistry.swift", "PortableMetrics.swift", "Monitor.swift", "FileWatchSession.swift", "UnavailableCollector.swift"]
 #endif
-targets.append(.target(name: "TripWireCollectors", dependencies: ["TripWireCore", "CTripWirePlatform"], exclude: [otherPlatform, "Support.swift", "BoundedSignatureLookup.swift", "AIFileAccess.swift", "Persistence.swift", "Extensions.swift", "Processes.swift", "HostResourceSampler.swift", "Hardware.swift", "SelfIntegrity.swift", "Applications.swift", "Registry.swift", "AgentIntegrationProbe.swift", "Configuration.swift", "Network.swift", "AIAppResourceSampler.swift"], sources: collectorSources))
+targets.append(.target(name: "TripWireCollectors", dependencies: ["TripWireCore", "CTripWirePlatform"], exclude: [otherPlatform, "Support.swift", "BoundedSignatureLookup.swift", "AIFileAccess.swift", "Persistence.swift", "Extensions.swift", "Processes.swift", "HostResourceSampler.swift", "Hardware.swift", "SelfIntegrity.swift", "Applications.swift", "Registry.swift", "AgentIntegrationProbe.swift", "Configuration.swift", "Network.swift", "AIAppResourceSampler.swift", "OpenEventBridge.swift"], sources: collectorSources))
 #endif
 let package = Package(name: "TripWire", platforms: [.macOS(.v14)], products: products, targets: targets)

@@ -16,7 +16,9 @@ Copyright © 2026 **RedMars LLC**. TripWire is distributed under the [MIT Licens
 
 The native and portable dashboards share the overlay's dark grid, cyan/magenta accents, evidence panels and navigation theme. Open **Tripwires** to add, edit, enable, disable or delete file, folder and application boundaries for **AI-associated activity**. Matches produce in-app alerts linked to what was observed, which rule matched and why it was flagged. Configuration and alerts are stored locally; baseline approval never bypasses a tripwire.
 
-Rules use the available snapshot evidence. They do not block access or provide an exhaustive file audit; Windows file monitoring remains unavailable. Start monitoring and review source status after saving. See [tripwire behavior, limitations and CLI commands](docs/TRIPWIRES.md).
+The approved Risk Control console groups open findings by color-coded risk, with an investigation queue and persistent user corrections. See [risk review and history](docs/RISK_REVIEW.md).
+
+Rules use the available snapshot evidence or the separately authorized macOS foreground [file-open event bridge](docs/FILE_EVENTS.md). They do not block access or provide an exhaustive file audit; Windows file monitoring remains unavailable. Start monitoring and review source status after saving. See [tripwire behavior, limitations and CLI commands](docs/TRIPWIRES.md).
 
 ## Build and run (macOS)
 
@@ -58,7 +60,7 @@ The monitoring banner distinguishes repeated monitoring, a single snapshot, stop
 
 **File Activity** shows regular files held open by recognized same-user AI desktop apps and observed descendants. While monitoring, an independent loop targets 2-second checks even when the overlay is hidden. The overlay's **Files** button opens this page even when another check needs attention. A healthy file source also supplies the **FILE WATCH: SNAPSHOTS** status link; failures/staleness take priority in that status line. Rows show path, associated app, holding executable/PID, open capability, last-seen time and supporting evidence. Search by path/app or turn off **Latest check only** to inspect retained history. Credential, startup and extension locations generate review findings even on the first observation; unchanged samples do not repeat findings. Event-only descriptors are explicitly distinguished. No target file contents are read.
 
-Open-file snapshots miss brief opens, closed/mapped files, detached or unrecognized agents, other users and protected processes. A held descriptor can be inherited; its mode does not prove actual reading or writing, an AI instruction or malicious intent. Exact file events require an implemented and approved Endpoint Security deployment; that remains unavailable. See [file-watch source details](docs/COLLECTORS.md#ai-open-file-snapshots).
+Open-file snapshots miss brief opens, closed/mapped files, detached or unrecognized agents, other users and protected processes. A held descriptor can be inherited; its mode does not prove actual reading or writing, an AI instruction or malicious intent. For brief opens, the optional foreground eslogger bridge requires separate administrator/FDA authorization; a production Endpoint Security deployment remains unavailable. See [file-watch source details](docs/COLLECTORS.md#ai-open-file-snapshots).
 
 Default evidence location: `~/Library/Application Support/TripWire/events.sqlite`. All interfaces accept `--db /absolute/path/events.sqlite` (pass app arguments with `open ... --args --db ...`). Keep database, WAL and SHM files together when making a live backup; stop the collector and use SQLite's backup API for a coherent export. Evidence contains sensitive metadata and stays local.
 

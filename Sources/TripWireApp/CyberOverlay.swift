@@ -50,9 +50,10 @@ struct CyberOverlayPanel: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var hasSample: Bool { view.map { $0.sampledAt != "NEVER" } ?? false }
-    private var boundaryAlerts: [Finding] { (view?.findings ?? []).filter { $0.ruleID.hasPrefix("user-tripwire:") } }
+    private var openFindings: [Finding] { (view?.findings ?? []).filter { view?.assessment(for: $0).status == .open } }
+    private var boundaryAlerts: [Finding] { openFindings.filter { $0.ruleID.hasPrefix("user-tripwire:") } }
     private var findingsTitle: String { boundaryAlerts.isEmpty ? "FINDINGS" : "ALERTS" }
-    private var findingsValue: String { boundaryAlerts.isEmpty ? count(view?.findings.count) : String(boundaryAlerts.count) }
+    private var findingsValue: String { view == nil ? "—" : String(boundaryAlerts.isEmpty ? openFindings.count : boundaryAlerts.count) }
     private var findingsDestination: DashboardMetric { boundaryAlerts.isEmpty ? .findings : .tripwireAlerts }
     private var sockets: Int? {
         view?.inventory.filter { [.network, .listener].contains($0.observation.eventClass) }.count
@@ -156,7 +157,7 @@ struct CyberOverlayPanel: View {
                         .font(.system(size: 20, weight: .semibold, design: .monospaced)).foregroundStyle(Self.cyan)
                 }.buttonStyle(.plain)
             }
-            if let finding = view?.findings.first {
+            if let finding = openFindings.first {
                 Button { inspect(.findings(finding.id)) } label: {
                     Text("LATEST ↗ \(finding.title)").font(.system(size: 17, design: .monospaced))
                         .foregroundStyle(Self.pink).lineLimit(1)
@@ -359,7 +360,7 @@ struct CyberOverlayPanel: View {
                                 Text("Reason & next step ↗").font(.system(size: 12, design: .monospaced)).foregroundStyle(Self.muted)
                             }.fixedSize(horizontal: false, vertical: true)
                         }.buttonStyle(.plain).help(checkSummary.explanation)
-                        if let finding = view?.findings.first {
+                        if let finding = openFindings.first {
                             Button { inspect(.findings(finding.id)) } label: {
                                 Text("LATEST ↗ \(finding.title)").font(.system(size: 13, design: .monospaced))
                                     .foregroundStyle(Self.pink).lineLimit(3).fixedSize(horizontal: false, vertical: true)
@@ -439,7 +440,7 @@ struct CyberOverlayPanel: View {
     private var investigationMenu: some View {
         Menu("INSPECT") {
             Button("Take one snapshot", action: snapshot).disabled(sampling)
-            if let finding = view?.findings.first {
+            if let finding = openFindings.first {
                 Button("Latest finding: \(finding.title)") { inspect(.findings(finding.id)) }
             }
             ForEach(Array((view?.events ?? []).prefix(3))) { event in

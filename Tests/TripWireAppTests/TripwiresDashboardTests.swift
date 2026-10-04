@@ -38,14 +38,26 @@ final class TripwiresDashboardTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("tripwire-render-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let model = DashboardModel(storeURL: root.appendingPathComponent("events.sqlite"))
+        // Synthetic records live only in this test target and its temporary store.
+        let writer = try EventStore(url: model.storeURL)
+        try writer.saveTripwire(TripwireRule(name: "Fixture boundary", path: "/fixture/private", kind: .folder))
+        for index in 0..<5 {
+            let path = "/fixture/private/test-\(index)"
+            let row = Observation(key: "test-\(index)", eventClass: .file, component: path, attributes: ["path": path, "associatedApp": "TEST AI", "associationBasis": "Synthetic test association"], confidence: .moderate)
+            try writer.ingest(CollectorSnapshot(descriptor: SensorDescriptor("ai-open-files", "TEST ONLY", source: "TEST ONLY", monitors: "Fixture"), observations: [row], complete: false, absenceReliable: false, state: .degraded, visibility: .limited, detail: "TEST ONLY"))
+            let finding = try XCTUnwrap(writer.findings().first { $0.component == path })
+            let level = RiskLevel.allCases[index]
+            if level != .high { try writer.reviewFinding(id: finding.id, level: level, status: .open, reason: "TEST ONLY: demonstrate a local correction", expectedReviewID: nil) }
+        }
+        model.refresh()
         let overlay = OverlayWindowController()
         try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
-        for (name, route) in [("overview", DashboardRoute.overview), ("tripwires", .tripwires), ("findings", .findings(nil))] {
+        for (name, route, width) in [("overview", DashboardRoute.overview, 1380.0), ("overview-compact", .overview, 950.0), ("tripwires", .tripwires, 1380.0), ("findings", .findings(nil), 1380.0)] {
             model.route = route
-            let view = Dashboard().environmentObject(model).environmentObject(overlay).environment(\.colorScheme, .dark).frame(width: 1380, height: 900)
+            let view = Dashboard().environmentObject(model).environmentObject(overlay).environment(\.colorScheme, .dark).frame(width: width, height: 900)
             let host = NSHostingView(rootView: view)
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1380, height: 900), styleMask: [.borderless], backing: .buffered, defer: false)
-            window.contentView = host; host.frame = NSRect(x: 0, y: 0, width: 1380, height: 900)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 900), styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host; host.frame = NSRect(x: 0, y: 0, width: width, height: 900)
             host.layoutSubtreeIfNeeded()
             RunLoop.main.run(until: Date().addingTimeInterval(0.15))
             host.layoutSubtreeIfNeeded(); host.displayIfNeeded()

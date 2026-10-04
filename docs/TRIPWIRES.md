@@ -2,7 +2,7 @@
 
 Open **Tripwires** in the dashboard to define boundaries for AI-associated activity. Choose a name, an absolute target path and a boundary type:
 
-- **File:** an AI-associated process is observed holding that exact regular file open.
+- **File:** an AI-associated process is observed holding that exact file open, or a matching reported open from the separately authorized macOS event bridge.
 - **Folder:** the same observation at the folder path or inside any of its subfolders.
 - **Application:** an AI-associated open file inside a macOS `.app` bundle (or at the selected executable), or the selected application's executable observed running in a recognized AI process tree. On Linux and Windows, select the executable file rather than an app's display name or shortcut.
 
@@ -10,11 +10,15 @@ Use **Choose…** or enter the path directly. Saving never opens the target, cha
 
 The matching rule produces an elevated finding titled **Tripwire triggered: NAME**, with the observed path, process, association basis, detection time, why it matched, and a link to the exact evidence. The dashboard displays a dismissible banner and the overlay links to recorded findings/alerts. Dismissing the banner affects that app session only; evidence stays in the database. No OS notification permission is required. Alerts are in-app, so a closed application cannot display them.
 
-Rules are evaluated against newly collected rows, including unchanged baseline rows. Existing baseline approval never exempts a configured boundary. Saving a rule does not reclassify stale inventory as a fresh access. There is one alert per rule revision, observed process instance and path/event class, retained across collector restarts. A new process instance can alert again. Editing or re-enabling a rule starts a new revision; deleting or disabling a rule stops future matches while preserving existing findings and configuration history.
+Rules are evaluated against newly collected rows, including unchanged baseline rows. Existing baseline approval never exempts a configured boundary. Saving a rule does not reclassify stale inventory as a fresh access. There is one alert per rule revision, observed process instance and path/event class, retained across collector restarts. A new process instance can alert again; each distinct event-feed open can also alert. Editing or re-enabling a rule starts a new revision; deleting or disabling a rule stops future matches while preserving existing findings and configuration history.
+
+Brief opens/reads can be entirely missed by snapshots. The dashboard now shows this setup gap explicitly. See [foreground event capture and its authorization requirements](FILE_EVENTS.md).
+
+Findings support [risk corrections and Open / Expected activity / False positive review status](RISK_REVIEW.md). A review never disables future rule matches.
 
 ## What an alert establishes
 
-File snapshots establish that a process held a regular-file descriptor at observation time. Its mode expresses capability, not a proven read, write, modification or disclosure. Descriptors can be inherited. Application matches use observed process paths, identities and bounded parent chains; process start times and matching account identities constrain ancestry. Name/path recognition can be spoofed, and observed ancestry does not prove an AI instruction or exact launch causality. No process arguments, environment values or target contents are collected.
+File snapshots establish that a process held a file or directory descriptor at observation time. Its mode expresses capability, not a proven read, write, modification or disclosure. Descriptors can be inherited. Application matches use observed process paths, identities and bounded parent chains; process start times and matching account identities constrain ancestry. Name/path recognition can be spoofed, and observed ancestry does not prove an AI instruction or exact launch causality. No process arguments, environment values or target contents are collected.
 
 Partial snapshots can still produce alerts for actual observed rows, with their source limitations retained. Missing or unavailable evidence never becomes an absence claim. Polling can miss brief operations, detached launches, unrecognized agents, other users and protected processes. A failed sensor must be investigated in **Sensor Status / Checks**.
 

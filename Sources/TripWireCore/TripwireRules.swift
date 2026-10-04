@@ -14,6 +14,7 @@ public struct TripwireRule: Codable, Equatable, Identifiable {
     public var path: String
     public var kind: TripwireKind
     public var enabled: Bool
+    public var updatedAt: Date?
     public var platform: HostPlatform
     public init(id: String = UUID().uuidString, name: String, path: String, kind: TripwireKind, enabled: Bool = true, platform: HostPlatform = .current) {
         self.id = id; revision = UUID().uuidString; self.name = name; self.path = path
@@ -30,7 +31,7 @@ public struct TripwireRule: Codable, Equatable, Identifiable {
         return copy
     }
     public var scopeDescription: String {
-        kind == .application ? "AI-associated open files inside this application, or its executable observed in an AI-associated process tree." : kind == .folder ? "AI-associated regular files held open at this path or inside its subfolders." : "AI-associated processes holding this exact regular-file path open."
+        kind == .application ? "AI-associated file/directory opens inside this application, or its executable observed in an AI-associated process tree." : kind == .folder ? "AI-associated file or directory opens at this path or inside its subfolders. Snapshots can miss brief opens; event capture needs separate setup." : "AI-associated opens of this exact file path. Snapshots can miss brief opens; event capture needs separate setup."
     }
 }
 
@@ -72,11 +73,11 @@ struct TripwireMatch {
     var association: String
     var path: String
     var key: String {
-        let identity = observation.process?.instanceKey ?? observation.key
+        let identity = observation.attributes["accessEventID"] ?? observation.process?.instanceKey ?? observation.key
         return "tripwire-hit:\(rule.id):\(rule.revision):" + Digest.sha256(Data((identity + "\n" + path + "\n" + observation.eventClass.rawValue).utf8))
     }
     func finding(event: EvidenceEvent) -> Finding {
-        let action = observation.eventClass == .file ? "was observed holding \(path) open (\(observation.attributes["openMode"] ?? "mode unknown"))" : "was observed running from \(path)"
+        let action = observation.attributes["accessEventID"] != nil ? "was reported opening \(path) by the OS event stream (\(observation.attributes["openMode"] ?? "mode unknown"))" : observation.eventClass == .file ? "was observed holding \(path) open (\(observation.attributes["openMode"] ?? "mode unknown"))" : "was observed running from \(path)"
         return Finding(timestamp: event.timestamp, title: "Tripwire triggered: \(rule.name)",
             whatHappened: "Process \(observation.process?.pid.map(String.init) ?? "UNKNOWN") \(action). \(association)",
             whyFlagged: "Your enabled \(rule.kind.rawValue) tripwire ‘\(rule.name)’ matches \(rule.path). This alert is independent of baseline approval. It reports an observed boundary match, not a proven unauthorized read/write or malicious action.",
@@ -88,17 +89,17 @@ struct TripwireMatch {
 }
 
 enum TripwireMatcher {
-    static let limitations = ["Polling can miss brief access and processes. Unrecognized agents, detached launches, protected processes and other identities may be outside scope.", "Paths are compared lexically. Aliases, hard links and symlink spellings may evade matching; target contents are never read.", "AI association is a name/path and observed-ancestry heuristic, not signature attestation, proof of an AI instruction or malicious intent.", "Repeated snapshots of the same process/path produce one alert per rule revision; a new process instance or rule revision can alert again."]
+    static let limitations = ["Snapshot polling can miss brief access and processes. The optional event feed must be separately authorized and running. Unrecognized agents, detached launches, protected processes and other identities may be outside scope.", "Paths are compared lexically. Aliases, hard links and symlink spellings may evade matching; target contents are never read.", "AI association uses app recognition and observed ancestry or OS-reported audit identities, not signature attestation, proof of an AI instruction or malicious intent.", "Repeated snapshots of the same process/path produce one alert per rule revision; a new process instance, rule revision or distinct event-feed open can alert again."]
     static func matches(_ snapshot: CollectorSnapshot, rules: [TripwireRule], platform: HostPlatform = .current) -> [TripwireMatch] {
         // Valid observed rows from a partial source remain evidence, but unavailable sources do not.
         guard snapshot.visibility != .unavailable, snapshot.visibility != .notObservable else { return [] }
-        let active = rules.filter { $0.enabled && $0.platform == platform }.compactMap { rule in TripwirePath.normalize(rule.path, platform: platform).map { (rule, $0) } }
+        let active = rules.filter { $0.enabled && $0.platform == platform && (snapshot.descriptor.id != "file-open-events" || $0.updatedAt == nil || snapshot.timestamp >= $0.updatedAt!) }.compactMap { rule in TripwirePath.normalize(rule.path, platform: platform).map { (rule, $0) } }
         guard !active.isEmpty else { return [] }
         let processes = Dictionary(snapshot.observations.compactMap { row in row.process?.pid.map { ($0, row.process!) } }, uniquingKeysWith: { a, _ in a })
         var results: [TripwireMatch] = []
         for row in snapshot.observations {
             var association: String?, path: String?
-            if snapshot.descriptor.id == "ai-open-files", row.eventClass == .file,
+            if ["ai-open-files", "file-open-events"].contains(snapshot.descriptor.id), row.eventClass == .file,
                let app = row.attributes["associatedApp"], !app.isEmpty, let basis = row.attributes["associationBasis"] {
                 association = "Associated app: \(app). \(basis)"; path = row.attributes["path"]
             } else if snapshot.descriptor.id == "processes", row.eventClass == .process, let process = row.process {

@@ -92,7 +92,12 @@ import TripWireCollectors
     }
     func stop() { stopping = true; task?.cancel() }
     var tripwireAlerts: [Finding] { (view?.findings ?? []).filter { $0.ruleID.hasPrefix("user-tripwire:") } }
-    var alert: Finding? { tripwireAlerts.first { !dismissedAlerts.contains($0.id) } }
+    var alert: Finding? { tripwireAlerts.first { !dismissedAlerts.contains($0.id) && view?.assessment(for: $0).status == .open } }
+    var openFindings: [Finding] { view?.openFindings ?? [] }
+    func review(_ finding: Finding, level: RiskLevel, status: FindingReviewStatus, reason: String, expectedReviewID: String?) throws {
+        try EventStore(url: storeURL).reviewFinding(id: finding.id, level: level, status: status, reason: reason, expectedReviewID: expectedReviewID)
+        refresh()
+    }
     func dismissAlert(_ finding: Finding) { dismissedAlerts.insert(finding.id) }
     @discardableResult func saveTripwire(_ rule: TripwireRule) -> Bool {
         do { try EventStore(url: storeURL).saveTripwire(rule); configurationError = nil; refresh(); return true }
@@ -108,13 +113,17 @@ import TripWireCollectors
 
     var sensors: [SensorHealth] {
         let saved = Dictionary(uniqueKeysWithValues: (view?.sensors ?? []).map { ($0.id, $0) })
-        return collectors.map { collector in
+        let registered = collectors.map { collector -> SensorHealth in
             if let health = saved[collector.descriptor.id] { return health.effective() }
             if let unavailable = collector as? UnavailableCollector {
                 return SensorHealth(descriptor: collector.descriptor, state: unavailable.state, visibility: .unavailable, detail: unavailable.reason)
             }
             return SensorHealth(descriptor: collector.descriptor)
         }
+        return registered + (saved[OpenEventBridge.id].map { [$0.effective(staleAfter: 10)] } ?? [])
+    }
+    var fileEventsReporting: Bool {
+        sensors.contains { $0.id == OpenEventBridge.id && SensorPresentation($0).kind == .reporting }
     }
     var reporting: Int { checkSummary.reporting.count }
     var checkSummary: CheckSummary { CheckSummary(sensors: sensors, running: running, sampling: sampling, readError: readError) }

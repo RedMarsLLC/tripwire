@@ -49,7 +49,11 @@ import TripWireTerminal
         let command = args.first ?? (TerminalRuntime.isOutputTerminal ? "tui" : "status")
         if ["help", "--help", "-h"].contains(command) { safePrint(help); return }
         if command == "metrics" { try await ResourceStream.run(once: once); return }
+        if command == "review" { try ReviewCommand.run(Array(args.dropFirst()), url: url, json: json); return }
         if command == "tripwires" { try TripwireCommands.run(Array(args.dropFirst()), url: url, json: json); return }
+        #if os(macOS)
+        if command == "file-events" { guard args.count == 1 else { throw TripWireError.message("Usage: tripwire file-events [--db PATH]") }; try await FileEventCommand.run(url: url); return }
+        #endif
         guard ["investigate", "view", "files", "agents", "status", "sensors", "events", "findings", "network", "listeners", "processes", "applications", "persistence", "extensions", "hardware", "baseline", "explain", "doctor", "coverage", "health", "sample", "monitor", "tui", "canary"].contains(command) else { throw TripWireError.message("Unknown command. Use tripwire help") }
         if command == "baseline", args.count > 1, args[1] != "approve" { throw TripWireError.message("Baseline reset is not implemented. Only explicit fingerprint approval is supported.") }
         let changesStore = ["sample", "monitor", "canary"].contains(command) || (command == "baseline" && args.count > 1)
@@ -120,8 +124,8 @@ import TripWireTerminal
             else { try InteractiveConsole(store: store).run(ascii: ascii) }
         case "status":
             let view = try StoreView(store: store)
-            if json { try emit(["coverage": view.coverage, "lastSample": view.sampledAt, "openFindings": String(view.findings.count), "database": view.databaseHealth]) }
-            else { safePrint("TRIPWIRE / HOST SECURITY WATCHDOG\nCoverage: \(view.coverage)\nLast snapshot: \(view.sampledAt)\nOpen findings: \(view.findings.count)\nChanges in last 200 events: \(view.changes)\nUnknown observations: \(view.unknowns)\nEvent store quick_check: \(view.databaseHealth)\nNo findings does not establish safety. Run doctor for limitations.") }
+            if json { try emit(["coverage": view.coverage, "lastSample": view.sampledAt, "openFindings": String(view.openFindings.count), "database": view.databaseHealth]) }
+            else { safePrint("TRIPWIRE / HOST SECURITY WATCHDOG\nCoverage: \(view.coverage)\nLast snapshot: \(view.sampledAt)\nOpen findings: \(view.openFindings.count)\nChanges in last 200 events: \(view.changes)\nUnknown observations: \(view.unknowns)\nEvent store quick_check: \(view.databaseHealth)\nNo findings does not establish safety. Run doctor for limitations.") }
         case "sensors":
             let sensors = try store.sensors().map { $0.effective() }
             if json { try emit(sensors) } else {
@@ -134,8 +138,9 @@ import TripWireTerminal
         case "findings":
             let findings = try store.findings()
             if json { try emit(findings) } else {
-                if findings.isEmpty { safePrint("NO OPEN FINDINGS / visibility limitations remain") }
-                for f in findings { safePrint(TerminalText.safe("\(f.id) \(f.title) / observation confidence \(f.confidence.rawValue) / intent UNKNOWN")) }
+                if findings.isEmpty { safePrint("NO RECORDED FINDINGS / visibility limitations remain") }
+                let reviews = try store.findingReviews()
+                for f in findings { let review = FindingAssessment(finding: f, reviews: reviews); safePrint(TerminalText.safe("\(review.level.label) / \(review.status.label) · \(f.id) \(f.title) / observation confidence \(f.confidence.rawValue) / intent UNKNOWN")) }
             }
         case "explain":
             guard args.count > 1 else { throw TripWireError.message("Usage: tripwire explain FINDING-ID") }
@@ -202,6 +207,8 @@ import TripWireTerminal
     status sensors events findings network listeners processes persistence
     applications extensions hardware baseline coverage health doctor agents files
     agent-hook [--provider codex|claude-code|cursor|generic]  Opt-in metadata stdin adapter
+    review FINDING-ID  Inspect history or correct risk/status with a required reason
+    file-events       macOS: consume explicitly authorized eslogger open JSONL
     tripwires [list|save|enable|disable|delete]  Configure AI-associated boundary alerts
     tripwires save --name NAME --path ABSOLUTE-PATH --kind file|folder|application
     explain FINDING-ID  Full evidence, limitations and investigation guidance
@@ -214,7 +221,7 @@ import TripWireTerminal
     """
 }
 // State is protected by the lock; the Windows interrupt flag is atomic in the C adapter.
-private final class StopToken: @unchecked Sendable {
+final class StopToken: @unchecked Sendable {
     private let lock = NSLock(); private var value = false
     var stopped: Bool {
         #if os(Windows)

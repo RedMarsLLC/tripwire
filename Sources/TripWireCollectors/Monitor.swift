@@ -62,7 +62,7 @@ public final class Monitor {
         guard ownerLock != nil else { return }
         defer { release() }
         fileWatch?.stop()
-        for var health in try store.sensors() where [.active, .degraded].contains(health.state) {
+        for var health in try store.sensors() where health.id != "file-open-events" && [.active, .degraded].contains(health.state) {
             health.state = .stopped; health.detail = "Collector owner stopped; last result: " + health.detail; try store.saveHealth(health)
         }
         try store.recordGap(CoverageGap(collector: "watchdog", start: Date(), reason: "Collector owner stopped; no continuous monitoring"))

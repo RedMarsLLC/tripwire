@@ -36,6 +36,12 @@ final class FileAccessTests: XCTestCase {
         XCTAssertEqual(snapshot.visibility, .limited)
         XCTAssertTrue(item.limitations.contains { $0.contains("not proof that bytes were read or written") })
     }
+    func testDirectoryHandlesAreRetainedForFolderRules() throws {
+        var directory = file; directory.path = "/test-home/private-folder"; directory.isDirectory = true
+        let rows = sample(values: [directory]).observations
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertTrue(rows.allSatisfy { $0.attributes["objectType"] == "Directory" })
+    }
     func testReusedOrReparentedAncestorInvalidatesDescendantAssociation() {
         for replacement in [Process(pid: 10, parent: 1, started: 120, path: root.path), Process(pid: 10, parent: 99, started: 100, path: root.path)] {
             let result = Sampler.snapshot(apps: [app], inventory: .init(values: [root, child], partial: false),

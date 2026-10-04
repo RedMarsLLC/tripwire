@@ -158,7 +158,7 @@ struct Dashboard: View {
             if let inspection = model.metricInspection { MetricInvestigationPanel(inspection: inspection).id(inspection.id) }
             else { empty("No graph selection", "Select a point or range on an overlay chart.") }
         case .appResources: AIAppResourcesPanel(metrics: model.appResourceSnapshot)
-        case .overview: overview
+        case .overview: RiskDashboard()
         case .findings(let id):
             if let id {
                 if let finding = model.view?.findings.first(where: { $0.id == id }) { FindingDetail(finding: finding) }
@@ -177,55 +177,13 @@ struct Dashboard: View {
             NSApp.activate()
         })
     }
-    private var overview: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Know what crossed the line.").font(.system(size: 28, weight: .bold, design: .monospaced))
-                    Text("Your machine. Your boundaries. Evidence you can inspect.").foregroundStyle(CyberTheme.muted)
-                }
-                Spacer()
-                Button("Configure tripwires ↗") { model.route = .tripwires }
-            }.padding(.bottom, 8)
-            Button { model.route = .security } label: {
-                Label("Security Watch · apps, ports, extensions and monitoring gaps →", systemImage: "shield.lefthalf.filled")
-            }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), alignment: .topLeading)], spacing: 12) {
-                MetricButton("Recorded findings", model.count(model.view?.findings.count), note: "What was found and why", icon: "exclamationmark.triangle") { model.open(.findings) }
-                MetricButton("Observed changes", model.count(model.view?.changes), note: "Within the last 200 events", icon: "arrow.triangle.2.circlepath") { model.open(.changes) }
-                MetricButton("Unknown observations", model.count(model.view?.unknowns), note: "Records with missing visibility", icon: "questionmark.circle") { model.open(.unknowns) }
-                MetricButton("Coverage gaps", model.count(model.view?.gaps.count), note: "Stored interruptions, including closed gaps", icon: "clock.badge.exclamationmark") { model.open(.gaps) }
-            }
-            Text("Click any metric to inspect its records. Findings are stored observations awaiting your interpretation; no findings does not establish safety.").font(.callout).foregroundStyle(.secondary)
-            if let latest = model.view?.findings.first {
-                Text("Latest finding").font(.title3.bold())
-                FindingSummary(finding: latest) { model.route = .findings(latest.id) }
-            } else if model.view == nil {
-                empty("Evidence unavailable", "Counts and findings are unknown until the store can be read.")
-            } else if !model.hasSample {
-                empty("No completed check yet", "Take a snapshot to establish the first inventory. Later changes can produce findings.")
-            } else {
-                empty("No findings recorded", "Checks have not produced a finding. Review the sensor limitations below.")
-            }
-            Text("What is running?").font(.title3.bold())
-            HStack(spacing: 12) {
-                MetricButton("Reporting", model.readError == nil ? String(model.reporting) : "—", note: "Recent sensor heartbeats", icon: "waveform.path.ecg") { model.route = .coverage(.reporting) }
-                MetricButton("Stopped / needs attention", model.readError == nil ? String(model.attention) : "—", note: "See the reason and next step", icon: "pause.circle") { model.route = .coverage(.attention) }
-                MetricButton("Unavailable in this build", String(model.unavailable), note: "Starting monitoring cannot enable these", icon: "minus.circle") { model.route = .coverage(.unavailable) }
-            }
-            Text("Recent observations").font(.title3.bold())
-            Text("Observations are the evidence stream. Only some observations trigger findings.").foregroundStyle(.secondary)
-            ForEach(Array((model.view?.events ?? []).prefix(6))) { EventCard(event: $0) }
-            Button("View all recent observations") { model.route = .events(.all) }
-        }
-    }
     private func findings(onlyTripwires: Bool = false) -> some View {
         let all = (model.view?.findings ?? []).filter { !onlyTripwires || $0.ruleID.hasPrefix("user-tripwire:") }
         let filtered = all.filter { query.isEmpty || [$0.title, $0.component, $0.whatHappened, $0.whyFlagged].contains { $0.localizedCaseInsensitiveContains(query) } }
         return LazyVStack(alignment: .leading, spacing: 16) {
             Text(onlyTripwires ? "Your tripwire alerts" : "What was found — and why").font(.title2.bold())
             if onlyTripwires { Button("Show all findings") { model.route = .findings(nil) } }
-            Text("Each finding links an observed change to its evidence. These are stored findings; review/resolution states are not implemented yet.").foregroundStyle(.secondary)
+            Text("Each finding preserves its evidence. Inspect it to correct the risk or mark expected activity / a false positive; the overview groups open findings by their current risk.").foregroundStyle(.secondary)
             TextField("Search findings, components, or reasons", text: $query).textFieldStyle(.roundedBorder)
             if model.view == nil { empty("Findings unavailable", "The evidence store could not be read. This does not mean there are zero findings.") }
             else if all.isEmpty { empty(model.hasSample ? "No findings recorded" : "No completed check yet", "Review sensor status for what can be observed. Take a snapshot or start monitoring to collect evidence.") }
@@ -272,7 +230,7 @@ struct Dashboard: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Coverage gaps and store health").font(.title2.bold())
             Text("Database structural check: \(model.view?.databaseHealth ?? "UNKNOWN")").font(.headline)
-            Text("ES event loss and queue backlog: UNKNOWN. No live event client is installed.").foregroundStyle(.orange)
+            Text("Production ES provider: not deployed. The optional foreground diagnostic feed has separate health and gap records; unknown counters never mean zero loss.").foregroundStyle(.orange)
             Text("A gap records a period of incomplete coverage. Closed gaps remain in the history; their end does not establish complete coverage afterward.").foregroundStyle(.secondary)
             if model.view == nil { empty("History unavailable", "The evidence store could not be read.") }
             else if model.view?.gaps.isEmpty == true { empty("No stored coverage gaps", "This does not establish uninterrupted monitoring or zero event loss.") }

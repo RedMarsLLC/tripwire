@@ -6,7 +6,7 @@ import TripWireCore
 public struct AIFileAccessCollector: Collector {
     public static let id = "ai-open-files"
     public let descriptor = SensorDescriptor(id, "AI open-file snapshots", source: "Linux same-UID /proc process and descriptor metadata",
-        monitors: "Regular-file descriptors held by recognized AI executable names and observed descendants",
+        monitors: "Regular-file and directory descriptors held by recognized AI executable names and observed descendants",
         limitations: ["Executable-name recognition can be spoofed and is not signing or AI-prompt attestation.", "Snapshots miss brief opens, detached descendants, unrecognized agents, other users and inaccessible processes.", "Descriptor metadata can race closes/reuse. Open mode is capability, not evidence of a read/write; inherited descriptors are possible. No target contents are read."])
     public init() {}
     public func collect() async -> CollectorSnapshot {
@@ -36,7 +36,8 @@ public struct AIFileAccessCollector: Collector {
                 let source = "/proc/\(pid)/fd/\(fd)"
                 var metadata = stat()
                 guard stat(source, &metadata) == 0 else { limited = true; continue }
-                guard metadata.st_mode & S_IFMT == S_IFREG else { continue }
+                let objectType = metadata.st_mode & S_IFMT
+                guard objectType == S_IFREG || objectType == S_IFDIR else { continue }
                 guard let path = try? FileManager.default.destinationOfSymbolicLink(atPath: source), path.hasPrefix("/") else { limited = true; continue }
                 let flags = LinuxProc.text("/proc/\(pid)/fdinfo/\(fd)", limit: 8192)?.split(separator: "\n").first(where: { $0.hasPrefix("flags:") }).flatMap { UInt32($0.split(whereSeparator: { $0.isWhitespace }).last ?? "", radix: 8) }
                 let mode: String
@@ -46,6 +47,7 @@ public struct AIFileAccessCollector: Collector {
                       (try? FileManager.default.destinationOfSymbolicLink(atPath: source)) == path else { limited = true; continue }
                 var attrs = ["path": path, "pid": String(pid), "executable": entry.identity.executablePath ?? "UNKNOWN", "associatedApp": URL(fileURLWithPath: agentPath).lastPathComponent, "openMode": mode, "associationBasis": "Executable-name recognition plus observed same-UID ancestry; not attestation"]
                 if let reason = FileAccessReview.reason(path: path, home: home, platform: .linux) { attrs["reviewReason"] = reason }
+                attrs["objectType"] = objectType == S_IFDIR ? "Directory" : "Regular file"
                 pending.append(Observation(key: "\(entry.identity.instanceKey ?? String(pid))|\(path)|\(mode)", eventClass: .file, component: path, attributes: attrs, process: entry.identity, limitations: descriptor.limitations, confidence: .moderate))
                 if pending.count + observations.count >= 2048 { limited = true; break }
             }
