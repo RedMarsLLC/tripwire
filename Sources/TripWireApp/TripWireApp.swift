@@ -143,7 +143,9 @@ struct Dashboard: View {
             }
             Spacer()
             Button("Inspect evidence ↗") { model.route = .findings(finding.id) }
-            Button { model.dismissAlert(finding) } label: { Image(systemName: "xmark") }.help("Dismiss this banner; the finding is retained")
+            Button { model.dismissAlert(finding) } label: { Image(systemName: "xmark") }
+                .accessibilityLabel("Dismiss notification banners")
+                .help("Clear current banners. Identical repeats stay in Findings until activity pauses for 30 seconds. New activity still alerts; all evidence is retained.")
         }.padding(14).background(CyberTheme.pink.opacity(0.09))
             .overlay(alignment: .bottom) { Rectangle().fill(CyberTheme.pink.opacity(0.5)).frame(height: 1) }
     }

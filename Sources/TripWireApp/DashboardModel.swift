@@ -4,7 +4,7 @@ import TripWireCore
 import TripWireCollectors
 
 @MainActor final class DashboardModel: ObservableObject {
-    @Published var view: StoreView?
+    @Published var view: StoreView? { didSet { alert = bannerState.next(pendingAlerts) } }
     @Published private(set) var agents = AgentActivityView()
     @Published var metricInspection: MetricInspection?
     @Published var appResourceSnapshot = AppResourceMetrics()
@@ -16,7 +16,8 @@ import TripWireCollectors
     @Published private(set) var stopping = false
     @Published var route: DashboardRoute = .overview
     @Published var configurationError: String?
-    @Published private var dismissedAlerts = Set<String>()
+    @Published private(set) var alert: Finding?
+    private var bannerState = AlertBannerState()
     var store: EventStore?
     let storeURL: URL
     private let collectors: [any Collector]
@@ -92,13 +93,16 @@ import TripWireCollectors
     }
     func stop() { stopping = true; task?.cancel() }
     var tripwireAlerts: [Finding] { (view?.findings ?? []).filter { $0.ruleID.hasPrefix("user-tripwire:") } }
-    var alert: Finding? { tripwireAlerts.first { !dismissedAlerts.contains($0.id) && view?.assessment(for: $0).status == .open } }
+    private var pendingAlerts: [Finding] { tripwireAlerts.filter { view?.assessment(for: $0).status == .open } }
     var openFindings: [Finding] { view?.openFindings ?? [] }
     func review(_ finding: Finding, level: RiskLevel, status: FindingReviewStatus, reason: String, expectedReviewID: String?) throws {
         try EventStore(url: storeURL).reviewFinding(id: finding.id, level: level, status: status, reason: reason, expectedReviewID: expectedReviewID)
         refresh()
     }
-    func dismissAlert(_ finding: Finding) { dismissedAlerts.insert(finding.id) }
+    func dismissAlert(_ finding: Finding) {
+        bannerState.dismiss(pendingAlerts)
+        alert = nil
+    }
     @discardableResult func saveTripwire(_ rule: TripwireRule) -> Bool {
         do { try EventStore(url: storeURL).saveTripwire(rule); configurationError = nil; refresh(); return true }
         catch { configurationError = String(describing: error); return false }

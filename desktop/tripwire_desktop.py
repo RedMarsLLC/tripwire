@@ -282,11 +282,34 @@ class CPUChart(QWidget):
         self.start_x = None; self.frozen = None; self.selected.emit(start,end)
 
 
+class AlertBannerState:
+    """Transient banner acknowledgement; never changes findings or collection."""
+    def __init__(self):
+        self.dismissed=set(); self.repeats={}
+    @staticmethod
+    def group(finding):
+        return tuple(finding.get(k,"") for k in ("ruleID","component","whatHappened","baselineDifference","severity"))
+    def dismiss(self,pending,now=None):
+        now=time.monotonic() if now is None else now
+        self.dismissed.update(f["id"] for f in pending)
+        for finding in pending:self.repeats[self.group(finding)]=now
+    def next(self,pending,now=None):
+        now=time.monotonic() if now is None else now
+        self.repeats={key:stamp for key,stamp in self.repeats.items() if now-stamp<30}
+        candidate=None
+        for finding in pending:
+            if finding["id"] in self.dismissed:continue
+            key=self.group(finding)
+            if key in self.repeats:
+                self.dismissed.add(finding["id"]); self.repeats[key]=now
+            elif candidate is None:candidate=finding
+        return candidate
+
 class Dashboard(QMainWindow):
     def __init__(self, engine):
         super().__init__(); self.engine = engine; self.page = "Overview"; self.rows = []; self.selection = None
         self.setWindowTitle("TripWire — RedMars"); self.resize(1240,820); self.setMinimumSize(960,620); self.setStyleSheet(THEME)
-        self.dismissed_alerts=set(); self.active_alert=None; self.editing_rule=None
+        self.banner_state=AlertBannerState(); self.active_alert=None; self.editing_rule=None
         root=CyberSurface(); root.setObjectName("surface"); self.setCentralWidget(root)
         outer=QHBoxLayout(root); outer.setContentsMargins(0,0,0,0); outer.setSpacing(0)
         sidebar=QWidget(); sidebar.setObjectName("sidebar"); sidebar.setFixedWidth(205); side=QVBoxLayout(sidebar); side.setContentsMargins(16,24,12,16)
@@ -314,7 +337,8 @@ class Dashboard(QMainWindow):
         self.status=QLabel(); self.status.setObjectName("status"); self.status.setTextFormat(Qt.TextFormat.PlainText); self.status.setWordWrap(True); layout.addWidget(self.status)
         self.alert_box=QWidget(); alerts=QHBoxLayout(self.alert_box); alerts.setContentsMargins(0,0,0,0)
         self.alert_label=QLabel(); self.alert_label.setObjectName("alert"); self.alert_label.setTextFormat(Qt.TextFormat.PlainText); self.alert_label.setWordWrap(True); alerts.addWidget(self.alert_label,1)
-        alerts.addWidget(button("Inspect alert ↗",self.inspect_alert)); alerts.addWidget(button("Dismiss",self.dismiss_alert)); self.alert_box.hide(); layout.addWidget(self.alert_box)
+        alerts.addWidget(button("Inspect alert ↗",self.inspect_alert))
+        self.dismiss_banner=button("Dismiss",self.dismiss_alert); self.dismiss_banner.setToolTip("Clear current banners. Identical repeats stay in Findings until activity pauses for 30 seconds. New activity still alerts; all evidence is retained."); alerts.addWidget(self.dismiss_banner); self.alert_box.hide(); layout.addWidget(self.alert_box)
         self.main_stack=QStackedWidget(); layout.addWidget(self.main_stack,1)
         self.content=QSplitter(); self.main_stack.addWidget(self.content)
         self.list=QListWidget(); self.list.currentRowChanged.connect(self.show_row); self.content.addWidget(self.list)
@@ -371,8 +395,11 @@ class Dashboard(QMainWindow):
         self.open_page("Findings")
         index=next((i for i,r in enumerate(self.rows) if r.get("id")==self.active_alert["id"]),-1)
         self.list.setCurrentRow(index)
+    def pending_alerts(self):
+        s=self.engine.snapshot; assessments={a["findingID"]:a for a in s.get("assessments",[])}
+        return [f for f in s.get("findings",[]) if assessments.get(f["id"],{}).get("status","open")=="open" and f.get("ruleID","").startswith("user-tripwire:")]
     def dismiss_alert(self):
-        if self.active_alert: self.dismissed_alerts.add(self.active_alert["id"])
+        self.banner_state.dismiss(self.pending_alerts())
         self.refresh()
     def show_detail(self, key, text):
         if key != self.detail_key: return
@@ -399,7 +426,7 @@ class Dashboard(QMainWindow):
         live=sum(x.get("state") in ("ACTIVE","DEGRADED") and x.get("visibility") in ("OBSERVABLE","LIMITED") for x in s.get("sensors",[]))
         self.checks_metric.setText(f"{live if s and not self.engine.error else '—'}\nReporting checks ↗")
         assessments={a["findingID"]:a for a in s.get("assessments",[])}
-        self.active_alert=next((f for f in s.get("findings",[]) if assessments.get(f["id"],{}).get("status","open")=="open" and f.get("ruleID","").startswith("user-tripwire:") and f["id"] not in self.dismissed_alerts),None)
+        self.active_alert=self.banner_state.next(self.pending_alerts())
         self.alert_box.setVisible(bool(self.active_alert))
         if self.active_alert: self.alert_label.setText(self.active_alert["title"]+"\n"+self.active_alert["component"]+(" · retained evidence; reader unavailable" if self.engine.error else ""))
         source=next((x for x in s.get("sensors",[]) if x.get("descriptor",{}).get("id")=="ai-open-files"),{})

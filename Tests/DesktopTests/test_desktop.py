@@ -13,7 +13,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[2]/"desktop"))
 from PySide6.QtCore import QSettings, QProcess
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton
-from tripwire_desktop import Engine, Dashboard, Overlay
+from tripwire_desktop import Engine, Dashboard, Overlay, AlertBannerState
 
 app=QApplication.instance() or QApplication([])
 
@@ -32,6 +32,29 @@ class DesktopTests(unittest.TestCase):
             QTest.qWait(50)
             if predicate(): return
         self.fail("Timed out waiting for real CLI state")
+    def test_dismiss_button_clears_backlog_without_changing_findings(self):
+        findings=[{"id":str(i),"timestamp":i,"title":"TEST ONLY", "whatHappened":f"Process 10 opened test file {i}","whyFlagged":"TEST ONLY", "component":f"/fixture/{i}","baselineDifference":"TEST revision", "confidence":"MODERATE","severity":"ELEVATED", "ruleID":"user-tripwire:TEST"} for i in range(3)]
+        self.engine.snapshot={"findings":findings,"findingsCount":3,"platform":"TEST ONLY"}
+        self.dashboard.refresh()
+        self.assertIsNotNone(self.dashboard.active_alert)
+        self.dashboard.dismiss_banner.click(); self.dashboard.refresh()
+        self.assertIsNone(self.dashboard.active_alert); self.assertTrue(self.dashboard.alert_box.isHidden())
+        self.assertEqual(self.engine.snapshot["findings"],findings)
+        fresh=dict(findings[0],id="fresh",whatHappened="A different process opened a file")
+        self.engine.snapshot["findings"]=[fresh]+findings; self.dashboard.refresh()
+        self.assertEqual(self.dashboard.active_alert["id"],"fresh")
+
+    def test_repeated_banner_stays_quiet_until_activity_pauses(self):
+        first={"id":"1","ruleID":"TEST","component":"/fixture","whatHappened":"Process 10 opened file","baselineDifference":"revision 1","severity":"ELEVATED"}
+        state=AlertBannerState(); self.assertEqual(state.next([first],now=0),first)
+        state.dismiss([first],now=1)
+        repeat=dict(first,id="2"); self.assertIsNone(state.next([repeat,first],now=20))
+        later=dict(first,id="3"); self.assertIsNone(state.next([later,repeat,first],now=40))
+        changed=dict(first,id="4",whatHappened="Process 10 wrote file")
+        self.assertEqual(state.next([changed,later],now=41),changed)
+        resumed=dict(first,id="5"); self.assertEqual(state.next([resumed,later],now=71),resumed)
+        self.assertIsNone(state.next([later,repeat,first],now=100))
+
     def test_layouts_controls_fit_and_only_expanded_shows_shrink(self):
         for mode in Overlay.LAYOUTS:
             self.overlay.change_layout(mode); self.overlay.show(); QTest.qWait(50)
