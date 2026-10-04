@@ -75,9 +75,10 @@ public struct OpenEventRecord: Decodable {
         return row
     }
     static func timestamp(_ value: String) -> Date? {
-        let format = ISO8601DateFormatter(); format.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = format.date(from: value) { return date }
-        format.formatOptions = [.withInternetDateTime]; return format.date(from: value)
+        // FormatStyle is a reusable value parser. Constructing ICU formatters for
+        // every field on every system event can make the pipe fall behind.
+        (try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(value)) ??
+            (try? Date.ISO8601FormatStyle(includingFractionalSeconds: false).parse(value))
     }
     public func observation(session: String, since: Date, now: Date = Date(), uid: UInt32 = getuid(), rules: [TripwireRule],
                             associate: (Token) -> String?) -> Observation? {
@@ -151,6 +152,8 @@ public final class OpenEventBridge {
     private var apps: [AIApplication] = [], rules: [TripwireRule] = []
     private var received = 0, retained = 0, invalid = 0, reportedInvalid = 0
     private var observedTypes = Set<UInt32>()
+    private var rejectedFormat = 0, rejectedTime = 0
+    private var latestInputAge: TimeInterval?
     public init(store: EventStore) { self.store = store }
     public func refresh() async throws {
         apps = await AIAppResourceSampler.applications(); rules = try store.tripwireRules()
@@ -159,8 +162,10 @@ public final class OpenEventBridge {
     public func consume(_ data: Data) throws {
         let row: OpenEventRecord
         do { row = try OpenEventRecord.decode(data) }
-        catch { invalid += 1; return }
-        guard let stamp = OpenEventRecord.timestamp(row.time), stamp >= started, (-1...10).contains(Date().timeIntervalSince(stamp)) else { invalid += 1; return }
+        catch { invalid += 1; rejectedFormat += 1; return }
+        guard let stamp = OpenEventRecord.timestamp(row.time) else { invalid += 1; rejectedFormat += 1; return }
+        latestInputAge = Date().timeIntervalSince(stamp)
+        guard stamp >= started, (-1...10).contains(latestInputAge!) else { invalid += 1; rejectedTime += 1; return }
         received += 1; lastValid = Date(); observedTypes.insert(row.event_type)
         if var gap = sequence.observe(version: row.version, type: row.event_type, sequence: row.seq_num, globalSequence: row.global_seq_num, at: Date()) {
             gap.collector = Self.id; try store.recordGap(gap)
@@ -203,7 +208,7 @@ public final class OpenEventBridge {
         let current = lastValid.map { now.timeIntervalSince($0) < 10 } ?? false
         try store.saveHealth(SensorHealth(descriptor: Self.descriptor, state: current ? .degraded : .error, visibility: current ? .limited : .unknown,
             initialized: lastValid != nil, lastHeartbeat: now, lastSuccess: lastValid, lastEvent: lastEvent,
-            detail: "\(received) valid file reports received; \(retained) scoped records retained; \(invalid) invalid records. Observed event type IDs: \(observedTypes.sorted().map(String.init).joined(separator: ", ")). \(current ? "Event stream reporting with the stated limits. Subscribed event types are not verified by stdin; only observed types are known." : "No recent valid input: verify eslogger authorization and the foreground pipe. Silence cannot establish coverage.")"))
+            detail: "\(received) valid file reports received; \(retained) scoped records retained; \(invalid) rejected (\(rejectedFormat) format/metadata, \(rejectedTime) stale/time). Latest input age: \(latestInputAge.map { String(format: "%.2fs", $0) } ?? "unknown"). Observed event type IDs: \(observedTypes.sorted().map(String.init).joined(separator: ", ")). \(current ? "Event stream reporting with the stated limits. Subscribed event types are not verified by stdin; only observed types are known." : "No recent valid input: verify eslogger authorization and the foreground pipe. Silence cannot establish coverage.")"))
     }
     public func stop() throws {
         try store.saveHealth(SensorHealth(descriptor: Self.descriptor, state: .stopped, visibility: .unknown, initialized: lastValid != nil,

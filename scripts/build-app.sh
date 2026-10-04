@@ -10,11 +10,21 @@ OUTPUT_DIR="dist"
 APP="$OUTPUT_DIR/TripWire.app"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
+# A running Mach-O must be replaced with a new inode. Overwriting it in place
+# can leave macOS's cached code-signature pages inconsistent and kill launches.
+copy_executable() {
+    staged_executable=$(mktemp "$2.XXXXXX")
+    if cp "$1" "$staged_executable" && chmod 755 "$staged_executable" && mv -f "$staged_executable" "$2"; then
+        return 0
+    fi
+    rm -f "$staged_executable"
+    return 1
+}
 cp LICENSE "$APP/Contents/Resources/LICENSE"
-cp .build/release/TripWireApp "$APP/Contents/MacOS/TripWireApp"
+copy_executable .build/release/TripWireApp "$APP/Contents/MacOS/TripWireApp"
 cp -R .build/release/TripWire_TripWireApp.bundle "$APP/Contents/Resources/"
 cp Sources/TripWireApp/Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-cp .build/release/tripwire "$OUTPUT_DIR/tripwire"
+copy_executable .build/release/tripwire "$OUTPUT_DIR/tripwire"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

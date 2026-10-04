@@ -6,6 +6,13 @@ import EndpointSecurity
 
 final class OpenEventTests: XCTestCase {
     let stamp = Date(timeIntervalSince1970: 1_800_000_000)
+    func testTimestampPrecisionAndTimezoneArePreserved() throws {
+        let fractional = try XCTUnwrap(OpenEventRecord.timestamp("2026-10-04T00:25:19.123456Z"))
+        let seconds = try XCTUnwrap(OpenEventRecord.timestamp("2026-10-04T00:25:19Z"))
+        XCTAssertEqual(fractional.timeIntervalSince(seconds), 0.123456, accuracy: 0.000001)
+        XCTAssertEqual(OpenEventRecord.timestamp("2026-10-03T20:25:19.123456-04:00"), fractional)
+        XCTAssertNil(OpenEventRecord.timestamp("not a time"))
+    }
     func fixture(path: String = "/test-only/protected/file", directory: Bool = false, sequence: Int = 20) throws -> Data {
         let format = ISO8601DateFormatter(); format.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let token: [String: Any] = ["pid": 200, "pidversion": 7, "ruid": 501]

@@ -15,7 +15,7 @@ enum FileEventCommand {
         let signals = [SIGINT, SIGTERM].map { DispatchSource.makeSignalSource(signal: $0, queue: .global()) }
         for signal in signals { signal.setEventHandler { stop.request() }; signal.resume() }
         defer { signals.forEach { $0.cancel() } }
-        var buffer = Data(), dropping = false, refreshed = Date.distantPast
+        var framer = BoundedLineFramer(), refreshed = Date.distantPast
         while !stop.stopped {
             if Date().timeIntervalSince(refreshed) > 2 { try await bridge.refresh(); refreshed = Date() }
             var fd = pollfd(fd: STDIN_FILENO, events: Int16(POLLIN), revents: 0)
@@ -24,18 +24,9 @@ enum FileEventCommand {
             if ready == 0 { continue }
             var bytes = [UInt8](repeating: 0, count: 32768)
             let count = read(STDIN_FILENO, &bytes, bytes.count)
-            if count == 0 { if dropping { try bridge.consume(Data()) }; if !buffer.isEmpty { try bridge.consume(buffer) }; return }
+            if count == 0 { try framer.finish(line: bridge.consume); return }
             if count < 0 { if errno == EINTR { continue }; throw TripWireError.message("Open-event input failed") }
-            for byte in bytes.prefix(count) {
-                if byte == 10 {
-                    if dropping { try bridge.consume(Data()); dropping = false }
-                    else if !buffer.isEmpty { try bridge.consume(buffer) }
-                    buffer.removeAll(keepingCapacity: true)
-                } else if !dropping {
-                    if buffer.count >= 262_144 { buffer.removeAll(keepingCapacity: true); dropping = true }
-                    else { buffer.append(byte) }
-                }
-            }
+            try framer.consume(Data(bytes.prefix(count)), line: bridge.consume)
         }
     }
 }
