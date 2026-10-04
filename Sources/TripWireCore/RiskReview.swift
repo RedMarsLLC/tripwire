@@ -21,9 +21,18 @@ public enum RiskLevel: String, Codable, CaseIterable, Identifiable {
     }
 }
 public enum FindingReviewStatus: String, Codable, CaseIterable, Identifiable {
-    case open, expected, falsePositive = "false-positive"
+    case open, cleared, expected, falsePositive = "false-positive"
     public var id: String { rawValue }
-    public var label: String { switch self { case .open: return "Open"; case .expected: return "Expected activity"; case .falsePositive: return "False positive" } }
+    public var label: String { switch self { case .open: return "Open"; case .cleared: return "Cleared"; case .expected: return "Expected activity"; case .falsePositive: return "False positive" } }
+}
+/// Freeze the displayed queue and its review revisions before confirmation.
+/// Findings arriving later must never be swept into a bulk clear.
+public struct FindingReviewTarget: Codable {
+    public var findingID: String
+    public var expectedReviewID: String?
+    public init(findingID: String, expectedReviewID: String?) {
+        self.findingID = findingID; self.expectedReviewID = expectedReviewID
+    }
 }
 public struct FindingReview: Codable, Identifiable, Equatable {
     public var id: String

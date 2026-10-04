@@ -5,10 +5,10 @@ from html import escape
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QLinearGradient
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QLCDNumber, QListWidget, QLineEdit, QComboBox, QPlainTextEdit, QScrollArea, QSplitter)
+    QLCDNumber, QListWidget, QLineEdit, QComboBox, QPlainTextEdit, QScrollArea, QSplitter, QMessageBox)
 
 LEVELS = [("critical", "#ff455e"), ("high", "#ff8538"), ("medium", "#ffc940"), ("low", "#0de8ff"), ("unassessed", "#b0a1d1")]
-STATUSES = [("open", "Open"), ("expected", "Expected activity"), ("false-positive", "False positive")]
+STATUSES = [("open", "Open"), ("cleared", "Cleared"), ("expected", "Expected activity"), ("false-positive", "False positive")]
 
 class ConsoleHousing(QWidget):
     def paintEvent(self,event):
@@ -23,7 +23,7 @@ class ConsoleHousing(QWidget):
 class RiskCenter(QWidget):
     def __init__(self, dashboard):
         super().__init__(); self.dashboard=dashboard; self.engine=dashboard.engine
-        self.level=None; self.selected=None; self.rows=[]; self.revision=None; self.history=[]; self.saved_assessment=None
+        self.level=None; self.selected=None; self.rows=[]; self.revision=None; self.history=[]; self.saved_assessment=None; self.clearing=False
         outer=QVBoxLayout(self); outer.setContentsMargins(0,0,0,0); outer.setSpacing(14)
         console=ConsoleHousing()
         console.setObjectName("console"); top=QVBoxLayout(console); top.setContentsMargins(18,14,18,12)
@@ -44,9 +44,11 @@ class RiskCenter(QWidget):
         split=QSplitter(); outer.addWidget(split,1)
         queue=QWidget(); q=QVBoxLayout(queue); q.setContentsMargins(0,0,12,0)
         q.addWidget(QLabel("REVIEW QUEUE")); controls=QHBoxLayout(); self.scope=QComboBox(); self.scope.addItems(["Open","Reviewed"]); controls.addWidget(self.scope)
-        clear=QPushButton("All levels"); clear.clicked.connect(lambda:self.filter_level(None)); controls.addWidget(clear); q.addLayout(controls)
+        clear=QPushButton("All levels"); clear.setToolTip("Remove the risk-level filter. Findings are unchanged."); clear.clicked.connect(lambda:self.filter_level(None)); controls.addWidget(clear); q.addLayout(controls)
         self.filter_label=QLabel("ALL LEVELS"); self.filter_label.setObjectName("eyebrow"); q.addWidget(self.filter_label)
         self.search=QLineEdit(); self.search.setPlaceholderText("Search findings"); q.addWidget(self.search)
+        self.clear_queue=QPushButton("Clear queue…"); self.clear_queue.clicked.connect(self.confirm_clear_queue); q.addWidget(self.clear_queue)
+        self.clear_result=QLabel(); self.clear_result.setWordWrap(True); self.clear_result.setTextFormat(Qt.TextFormat.PlainText); q.addWidget(self.clear_result)
         self.queue=QListWidget(); q.addWidget(self.queue,1); self.scope.currentTextChanged.connect(self.refresh); self.search.textChanged.connect(self.refresh); self.queue.currentRowChanged.connect(self.select)
         self.queue_note=QLabel(); self.queue_note.setWordWrap(True); self.queue_note.setObjectName("eyebrow"); q.addWidget(self.queue_note); split.addWidget(queue)
         scroll=QScrollArea(); scroll.setWidgetResizable(True); split.addWidget(scroll)
@@ -85,6 +87,8 @@ class RiskCenter(QWidget):
         if self.dashboard.page != "Overview": return
         reviewed=self.scope.currentText()=="Reviewed"; assessments=self.assessments(); query=self.search.text().casefold()
         rows=[f for f in snapshot.get("findings",[]) if f["id"] in assessments and ((assessments[f["id"]]["status"]!="open")==reviewed) and (self.level is None or assessments[f["id"]]["level"]==self.level) and (not query or query in (f["title"]+f["component"]+f["whyFlagged"]).casefold())]
+        self.clear_queue.setVisible(not reviewed); self.clear_queue.setEnabled(valid and bool(rows) and not self.clearing)
+        self.clear_queue.setText("Clearing…" if self.clearing else f"Clear queue ({len(rows)})…")
         order={level:i for i,(level,_) in enumerate(LEVELS)}; rows.sort(key=lambda f:(order[assessments[f["id"]]["level"]],-f["timestamp"]))
         self.queue_note.setText(("Queue limited to newest 1,000 records; risk counts include all findings. " if snapshot.get("findingsTruncated") else "")+("Store unavailable; retained records shown, counts unknown." if not valid else "Corrections never suppress future alerts."))
         new_signature=[(r["id"],assessments[r["id"]]) for r in rows]
@@ -119,8 +123,24 @@ class RiskCenter(QWidget):
         if self.engine.config.state().name != "NotRunning": self.result.setText("Another configuration change is saving. Try again when it completes."); return
         self.save.setEnabled(False)
         self.engine.configure_rule([self.selected,"--level",self.risk.currentData(),"--status",self.status.currentData(),"--reason",self.reason.text(),"--expected-review",self.revision or "none"],command="review")
+    def confirm_clear_queue(self):
+        if self.clearing or self.engine.error or self.scope.currentText()!="Open" or not self.rows:return
+        assessments=self.assessments()
+        targets=[{"findingID":row["id"],"expectedReviewID":(assessments[row["id"]].get("latestReview") or {}).get("id")} for row in self.rows]
+        message=(f"Move these {len(targets)} displayed open findings to Reviewed with status Cleared? "
+                 "Only findings matching the current level and search are included. "
+                 "Evidence and risk levels stay intact. New findings stay open and future alerts remain enabled. "
+                 "You can reopen cleared findings from Reviewed.")
+        answer=QMessageBox.question(self,"Clear queue?",message,QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.Cancel,QMessageBox.StandardButton.Cancel)
+        if answer!=QMessageBox.StandardButton.Yes:return
+        if self.engine.config.state().name!="NotRunning":
+            self.clear_result.setText("Another change is saving. Try again when it completes."); return
+        self.clearing=True; self.clear_result.clear(); self.refresh()
+        self.engine.configure_rule(["--clear-queue"],command="review",input_data=json.dumps(targets).encode("utf-8"))
     def review_finished(self,success,message):
         if self.engine.config_kind!="review":return
+        if self.clearing:
+            self.clearing=False; self.clear_result.setText(message); self.refresh(); return
         self.save.setEnabled(True); self.result.setText("Correction saved. Evidence retained; future alerts remain enabled." if success else message)
     def review_loaded(self,key,text):
         if key!="review:"+str(self.selected):return

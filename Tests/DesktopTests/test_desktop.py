@@ -2,6 +2,7 @@
 import json
 import sqlite3
 from contextlib import closing
+from unittest.mock import patch
 import uuid
 import os
 from pathlib import Path
@@ -12,7 +13,7 @@ import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/"desktop"))
 from PySide6.QtCore import QSettings, QProcess
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QPushButton, QMessageBox
 from tripwire_desktop import Engine, Dashboard, Overlay, AlertBannerState
 
 app=QApplication.instance() or QApplication([])
@@ -131,6 +132,21 @@ class DesktopTests(unittest.TestCase):
             retained=json.loads(connection.execute("SELECT json FROM findings WHERE id=?",(fixture_id,)).fetchone()[0])
             self.assertEqual(retained,finding)
         center.risk.setCurrentIndex(center.risk.findData("critical")); center.status.setCurrentIndex(center.status.findData("open")); center.reason.setText("TEST: reopen for additional investigation"); center.save.click()
+        self.wait_for(lambda:self.engine.snapshot.get("riskCounts",{}).get("critical")==1)
+        center.scope.setCurrentText("Open"); self.assertEqual(center.selected,fixture_id)
+        with patch("risk_center.QMessageBox.question",return_value=QMessageBox.StandardButton.Cancel):
+            center.clear_queue.click()
+        self.assertEqual(self.engine.snapshot["riskCounts"]["critical"],1)
+        with patch("risk_center.QMessageBox.question",return_value=QMessageBox.StandardButton.Yes):
+            center.clear_queue.click()
+        self.wait_for(lambda:sum(self.engine.snapshot["riskCounts"].values())==0)
+        self.assertEqual(center.queue.count(),0)
+        center.scope.setCurrentText("Reviewed"); self.assertEqual(center.selected,fixture_id)
+        self.assertEqual(center.status.currentData(),"cleared"); self.assertEqual(center.risk.currentData(),"critical")
+        with closing(sqlite3.connect(self.engine.database)) as connection:
+            retained=json.loads(connection.execute("SELECT json FROM findings WHERE id=?",(fixture_id,)).fetchone()[0])
+            self.assertEqual(retained,finding)
+        center.status.setCurrentIndex(center.status.findData("open")); center.reason.setText("TEST undo clear"); center.save.click()
         self.wait_for(lambda:self.engine.snapshot.get("riskCounts",{}).get("critical")==1)
         center.scope.setCurrentText("Open"); self.assertEqual(center.selected,fixture_id)
         if os.environ.get("TRIPWIRE_DASHBOARD_RENDER_DIR"):

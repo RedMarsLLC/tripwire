@@ -136,11 +136,13 @@ class Engine(QObject):
         self.config_deadline = QTimer(self); self.config_deadline.setSingleShot(True); self.config_deadline.setInterval(8000)
         self.config_deadline.timeout.connect(self.config.kill)
 
-    def configure_rule(self, arguments, command="tripwires"):
+    def configure_rule(self, arguments, command="tripwires", input_data=None):
         if self.config.state() != QProcess.ProcessState.NotRunning: return
         self.config_kind=command
         self.config_buffer.clear()
         self.config.start(self.executable,self.arguments([command]+arguments)); self.config_deadline.start()
+        if input_data is not None:
+            self.config.write(input_data); self.config.closeWriteChannel()
     def read_config(self):
         self.config_buffer.extend(bytes(self.config.readAllStandardOutput())+bytes(self.config.readAllStandardError()))
         if len(self.config_buffer)>65536: self.config.kill(); self.config_buffer.clear()

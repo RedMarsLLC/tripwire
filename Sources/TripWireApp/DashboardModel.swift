@@ -104,6 +104,14 @@ import TripWireCollectors
         try EventStore(url: storeURL).reviewFinding(id: finding.id, level: level, status: status, reason: reason, expectedReviewID: expectedReviewID)
         refresh()
     }
+    func clearQueue(_ targets: [FindingReviewTarget]) async throws -> Int {
+        let url = storeURL
+        let count = try await Task.detached(priority: .userInitiated) {
+            try EventStore(url: url).clearFindingQueue(targets)
+        }.value
+        refresh()
+        return count
+    }
     func dismissAlert(_ finding: Finding) {
         bannerState.dismiss(pendingAlerts)
         alert = nil

@@ -46,6 +46,11 @@ struct RiskDashboard: View {
     @State private var reviewed = false
     @State private var selectedID: String?
     @State private var query = ""
+    @State private var clearTargets: [FindingReviewTarget] = []
+    @State private var confirmClear = false
+    @State private var clearing = false
+    @State private var queueMessage: String?
+    @State private var queueError: String?
     private var queue: [Finding] {
         (model.view?.findings ?? []).filter { finding in
             let assessment = model.view!.assessment(for: finding)
@@ -56,6 +61,7 @@ struct RiskDashboard: View {
             let a = model.view!.assessment(for: $0).level.order, b = model.view!.assessment(for: $1).level.order
             return a == b ? $0.timestamp > $1.timestamp : a < b
         }
+
     }
     private var selected: Finding? { queue.first { $0.id == selectedID } ?? queue.first }
     var body: some View {
@@ -79,6 +85,22 @@ struct RiskDashboard: View {
                 Button("Coverage gaps ↗") { model.route = .health }
                 Spacer()
             }
+        }
+        .alert("Clear \(clearTargets.count) findings from this queue?", isPresented: $confirmClear) {
+            Button("Cancel", role: .cancel) { clearTargets = [] }
+            Button("Move to Reviewed") {
+                let targets = clearTargets
+                clearing = true; queueMessage = nil; queueError = nil
+                Task {
+                    do {
+                        let count = try await model.clearQueue(targets)
+                        selectedID = nil; queueMessage = "\(count) moved to Reviewed · Cleared."
+                    } catch { queueError = String(describing: error) }
+                    clearing = false; clearTargets = []
+                }
+            }
+        } message: {
+            Text("Only the open findings matching your current level and search when you clicked Clear queue will move to Reviewed with status Cleared. Evidence and risk levels stay intact. New findings remain open and future alerts stay enabled. You can reopen cleared findings from Reviewed.")
         }
     }
     private var console: some View {
@@ -135,9 +157,22 @@ struct RiskDashboard: View {
             HStack {
                 Text(selectedLevel?.label.uppercased() ?? "ALL LEVELS").font(.caption).foregroundStyle(selectedLevel?.color ?? CyberTheme.muted)
                 Spacer()
-                if selectedLevel != nil { Button("Clear") { selectedLevel = nil } }
+                if selectedLevel != nil {
+                    Button("All levels") { selectedLevel = nil; selectedID = nil }
+                        .help("Remove the risk-level filter. Findings are unchanged.")
+                }
             }
             TextField("Search findings", text: $query).textFieldStyle(.roundedBorder)
+            if !reviewed {
+                Button(clearing ? "Clearing…" : "Clear queue (\(queue.count))…") {
+                    guard let view = model.view else { return }
+                    clearTargets = queue.map { FindingReviewTarget(findingID: $0.id, expectedReviewID: view.assessment(for: $0).latestReview?.id) }
+                    confirmClear = true
+                }.disabled(clearing || queue.isEmpty || model.view == nil)
+                    .help("Move the displayed open findings to Reviewed. Keep evidence and future alerts.")
+            }
+            if let queueMessage { Text(queueMessage).font(.caption).foregroundStyle(accent) }
+            if let queueError { Text(queueError).font(.caption).foregroundStyle(.orange) }
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(queue) { finding in

@@ -41,4 +41,53 @@ final class RiskReviewTests: XCTestCase {
         let finding = Finding(timestamp: Date(), title: "TEST ONLY", whatHappened: "Fixture", whyFlagged: "Fixture", component: "Fixture", eventIDs: [], baselineDifference: "Fixture", confidence: .unknown, severity: .elevated, limitations: ["TEST ONLY"], suggestedInvestigation: [], ruleID: "fixture")
         XCTAssertEqual(RiskLevel.suggested(for: finding), .unassessed)
     }
+    func testClearQueuePreservesEvidenceAndRiskAndOnlyClearsConfirmedFindings() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tripwire-clear-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try EventStore(url: root.appendingPathComponent("events.sqlite"))
+        let rule = TripwireRule(name: "TEST ONLY", path: target, kind: .folder)
+        try store.saveTripwire(rule); try store.ingest(fileSample())
+        let finding = try XCTUnwrap(store.findings().first)
+        try store.reviewFinding(id: finding.id, level: .critical, status: .open, reason: "TEST priority", expectedReviewID: nil)
+        let revision = try XCTUnwrap(store.findingReviews().first?.id)
+        let targets = [FindingReviewTarget(findingID: finding.id, expectedReviewID: revision)]
+        // This event arrives after the UI freezes its confirmation selection.
+        try store.ingest(fileSample(pid: 99))
+        let originals = try JSONEncoder.stable.encode(store.findings()), events = try JSONEncoder.stable.encode(store.events())
+        XCTAssertEqual(try store.clearFindingQueue(targets), 1)
+        let reader = try EventStore(url: store.url, access: .readOnly), view = try StoreView(store: reader)
+        XCTAssertEqual(view.assessment(for: finding).status, .cleared)
+        XCTAssertEqual(view.assessment(for: finding).level, .critical)
+        XCTAssertEqual(view.riskCounts[.critical], 0)
+        XCTAssertEqual(view.riskCounts[.high], 1, "New arrivals must remain open")
+        XCTAssertEqual(try JSONEncoder.stable.encode(reader.findings()), originals)
+        XCTAssertEqual(try JSONEncoder.stable.encode(reader.events()), events)
+        XCTAssertTrue(try XCTUnwrap(reader.tripwireRules().first).enabled)
+        let cleared = try XCTUnwrap(view.findingReviews.first)
+        XCTAssertEqual(cleared.previousStatus, .open); XCTAssertEqual(cleared.previousLevel, .critical)
+        try store.reviewFinding(id: finding.id, level: .critical, status: .open, reason: "TEST undo clear", expectedReviewID: cleared.id)
+        XCTAssertEqual(try StoreView(store: reader).riskCounts[.critical], 1)
+        try store.ingest(fileSample(pid: 100))
+        XCTAssertEqual(try StoreView(store: reader).riskCounts[.high], 2, "Clearing must not suppress future alerts")
+    }
+    func testClearQueueRejectsStaleMissingDuplicateAndReadOnlySelectionsWithoutPartialWrites() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tripwire-clear-conflict-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try EventStore(url: root.appendingPathComponent("events.sqlite"))
+        try store.saveTripwire(TripwireRule(name: "TEST ONLY", path: target, kind: .folder))
+        try store.ingest(fileSample()); try store.ingest(fileSample(pid: 22))
+        let findings = try store.findings()
+        XCTAssertEqual(findings.count, 2)
+        let first = FindingReviewTarget(findingID: findings[0].id, expectedReviewID: nil)
+        let stale = FindingReviewTarget(findingID: findings[1].id, expectedReviewID: nil)
+        try store.reviewFinding(id: stale.findingID, level: .low, status: .expected, reason: "TEST concurrent review", expectedReviewID: nil)
+        for targets in [[first, stale], [first, FindingReviewTarget(findingID: "missing", expectedReviewID: nil)], [first, first], []] {
+            XCTAssertThrowsError(try store.clearFindingQueue(targets))
+            XCTAssertEqual(try store.findingReviews().count, 1, "Any failure must roll back the entire batch")
+            XCTAssertEqual(try StoreView(store: store).assessment(for: findings[0]).status, .open)
+        }
+        let reader = try EventStore(url: store.url, access: .readOnly)
+        XCTAssertThrowsError(try reader.clearFindingQueue([first]))
+        XCTAssertEqual(try store.findingReviews().count, 1)
+    }
 }

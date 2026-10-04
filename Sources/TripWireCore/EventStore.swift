@@ -140,6 +140,35 @@ public final class EventStore {
             try execute("COMMIT")
         } catch { try? execute("ROLLBACK"); throw error }
     }
+    /// Append neutral review records atomically; never delete evidence, lower
+    /// risk, alter boundaries, or clear observations outside the confirmed set.
+    @discardableResult public func clearFindingQueue(_ targets: [FindingReviewTarget]) throws -> Int {
+        guard !targets.isEmpty, targets.count <= 10_000,
+              Set(targets.map(\.findingID)).count == targets.count else {
+            throw TripWireError.message("Choose 1–10,000 distinct open findings to clear.")
+        }
+        lock.lock(); defer { lock.unlock() }
+        try requireWritable(); try execute("BEGIN IMMEDIATE")
+        do {
+            let latest = Dictionary(try findingReviews().map { ($0.findingID, $0) }, uniquingKeysWith: { first, _ in first })
+            for target in targets {
+                guard let json = try scalar("SELECT json FROM findings WHERE id=?", bindings: [target.findingID]) else {
+                    throw TripWireError.message("A finding is no longer available. Refresh the queue before clearing it.")
+                }
+                let finding = try JSONDecoder.stored.decode(Finding.self, from: Data(json.utf8))
+                let current = FindingAssessment(finding: finding, reviews: latest[target.findingID].map { [$0] } ?? [])
+                guard current.status == .open, current.latestReview?.id == target.expectedReviewID else {
+                    throw TripWireError.message("A finding changed since this queue was selected. Nothing was cleared. Refresh and try again.")
+                }
+                let review = FindingReview(id: UUID().uuidString, findingID: finding.id, timestamp: Date(), level: current.level, status: .cleared,
+                    previousLevel: current.level, previousStatus: current.status, suggestedLevel: current.suggestedLevel,
+                    reason: "Cleared from the Open queue by the user. Risk classification and evidence are unchanged; this is not a safety or false-positive determination.")
+                try save(review, id: review.id, date: review.timestamp, table: "finding_reviews")
+            }
+            try execute("COMMIT")
+            return targets.count
+        } catch { try? execute("ROLLBACK"); throw error }
+    }
     public func inventory() throws -> [InventoryRecord] { lock.lock(); defer { lock.unlock() }; return try read(InventoryRecord.self, table: "inventory") }
     public func sensors() throws -> [SensorHealth] { lock.lock(); defer { lock.unlock() }; return try read(SensorHealth.self, table: "sensors").sorted { $0.id < $1.id } }
     public func gaps() throws -> [CoverageGap] { lock.lock(); defer { lock.unlock() }; return try read(CoverageGap.self, table: "gaps") }

@@ -26,6 +26,22 @@ final class TripwiresDashboardTests: XCTestCase {
         model.refresh(); XCTAssertEqual(model.alert?.component, fresh.component)
         XCTAssertEqual(model.tripwireAlerts.count, 3)
     }
+    @MainActor func testClearingQueueRefreshesCountsAndBannerAndKeepsEvidence() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tripwire-clear-dashboard-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try EventStore(url: root.appendingPathComponent("events.sqlite"))
+        try store.saveTripwire(TripwireRule(name: "TEST ONLY", path: "/fixture/private", kind: .folder))
+        let observation = Observation(key: "test-handle", eventClass: .file, component: "/fixture/private/file", attributes: ["path": "/fixture/private/file", "associatedApp": "TEST ONLY", "associationBasis": "Synthetic test association"], confidence: .moderate)
+        try store.ingest(CollectorSnapshot(descriptor: SensorDescriptor("ai-open-files", "Fixture", source: "TEST ONLY", monitors: "Synthetic test data"), observations: [observation], state: .degraded, visibility: .limited, detail: "Fixture"))
+        let model = DashboardModel(storeURL: store.url)
+        let finding = try XCTUnwrap(model.alert)
+        let targets = model.openFindings.map { FindingReviewTarget(findingID: $0.id, expectedReviewID: model.view?.assessment(for: $0).latestReview?.id) }
+        let count = try await model.clearQueue(targets)
+        XCTAssertEqual(count, 1); XCTAssertTrue(model.openFindings.isEmpty); XCTAssertNil(model.alert)
+        XCTAssertEqual(model.view?.assessment(for: finding).status, .cleared)
+        XCTAssertEqual(try model.evidence(for: finding).events.count, 1)
+        XCTAssertTrue(model.view?.tripwires.first?.enabled == true)
+    }
     func testDismissedBurstStaysClearAndRearmsAfterQuiet() throws {
         let data: [String: Any] = ["id": "TEST-1", "timestamp": 0, "title": "TEST ONLY", "whatHappened": "Process 10 opened a test file", "whyFlagged": "TEST ONLY", "component": "/fixture/file", "eventIDs": [], "baselineDifference": "TEST rule revision 1", "confidence": "MODERATE", "severity": "ELEVATED", "limitations": ["TEST ONLY"], "suggestedInvestigation": [], "intent": "UNKNOWN", "ruleID": "user-tripwire:TEST"]
         let first = try JSONDecoder.stored.decode(Finding.self, from: JSONSerialization.data(withJSONObject: data))
