@@ -18,6 +18,8 @@ import TripWireCollectors
     @Published var configurationError: String?
     @Published private(set) var alert: Finding?
     private var bannerState = AlertBannerState()
+    let fileMonitor = FileMonitorController()
+    private var fileMonitorChanges: AnyCancellable?
     var store: EventStore?
     let storeURL: URL
     private let collectors: [any Collector]
@@ -32,6 +34,7 @@ import TripWireCollectors
         let index = args.firstIndex(of: "--db")
         self.storeURL = storeURL ?? index.flatMap { $0 + 1 < args.count ? URL(fileURLWithPath: args[$0 + 1]) : nil } ?? EventStore.defaultURL
         collectors = CollectorRegistry.make(storeURL: self.storeURL)
+        fileMonitorChanges = fileMonitor.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         refresh()
     }
     func refresh() {
@@ -76,6 +79,7 @@ import TripWireCollectors
         do { writer = try EventStore(url: storeURL) }
         catch { collectionError = String(describing: error); return }
         sampling = true; running = !once; stopping = false; collectionError = nil
+        if !once && fileMonitor.enabledForSession && !fileMonitor.phase.active { fileMonitor.start(storeURL: storeURL) }
         task = Task {
             let monitor = Monitor(store: writer)
             defer {
@@ -91,7 +95,8 @@ import TripWireCollectors
             } catch is CancellationError {} catch { collectionError = String(describing: error) }
         }
     }
-    func stop() { stopping = true; task?.cancel() }
+    func stop() { stopping = sampling; task?.cancel(); fileMonitor.stop() }
+    var monitoringActive: Bool { running || fileMonitor.phase.active }
     var tripwireAlerts: [Finding] { (view?.findings ?? []).filter { $0.ruleID.hasPrefix("user-tripwire:") } }
     private var pendingAlerts: [Finding] { tripwireAlerts.filter { view?.assessment(for: $0).status == .open } }
     var openFindings: [Finding] { view?.openFindings ?? [] }
@@ -138,6 +143,7 @@ import TripWireCollectors
         if stopping { return "Stopping monitoring…" }
         if running { return "Monitoring is on" }
         if sampling { return "Taking a snapshot…" }
+        if fileMonitor.phase.active { return fileMonitor.phase == .reporting ? "File monitoring is on" : "File monitor needs attention" }
         if reporting > 0 { return "Recent sensor reports from another session" }
         return hasSample ? "Monitoring is off" : "Ready for the first check"
     }
@@ -146,6 +152,7 @@ import TripWireCollectors
         if stopping { return "Finishing the current check and recording that collection has stopped." }
         if running { return "AI open-file snapshots target 2-second intervals; other inventories pause 15 seconds between rounds. Short-lived activity can be missed." }
         if sampling { return "One check of implemented sources. A snapshot stops when that round finishes." }
+        if fileMonitor.phase.active { return fileMonitor.detail }
         if reporting > 0 { return "This window is viewing the shared store. Recent heartbeats are available; stop or manage collection from the session that started it." }
         return "Start monitoring for repeated checks, or take a snapshot for one check. Unavailable sensors require further implementation."
     }

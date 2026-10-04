@@ -108,7 +108,7 @@ struct SensorPresentation {
             kind = [.active, .degraded].contains(current.state) && current.visibility == .limited ? .reporting : current.state == .stopped ? .stopped : .attention
             title = kind == .reporting ? "Open-event feed reporting · limited" : "Open-event feed is not reporting"
             explanation = current.detail
-            nextStep = "Open Tripwires → Set up foreground event capture. Keep the explicitly authorized eslogger pipe running in its terminal. Start monitoring controls snapshots and cannot start this separate feed. Check format, permission and sequence-gap reports; missing input never establishes coverage."
+            nextStep = "Open Tripwires → File monitoring → Enable file monitoring. Approve administrator access and grant TripWire Full Disk Access in macOS Settings if needed, then retry. No terminal is required. Check format, permission and sequence-gap reports; missing input never establishes coverage."
         } else if CollectorRegistry.unavailable.contains(where: { $0.descriptor.id == sensor.id }) {
             kind = .unavailable; title = "Not available in this build"
             explanation = sensor.detail

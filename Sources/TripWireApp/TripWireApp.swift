@@ -46,8 +46,8 @@ struct Dashboard: View {
                     }
                     Spacer()
                     Button(model.sampling && !model.running ? "Checking…" : "Take snapshot") { model.begin(once: true) }.disabled(model.sampling)
-                    Button(model.stopping ? "Stopping…" : model.running ? "Stop monitoring" : "Start monitoring") {
-                        model.running ? model.stop() : model.begin(once: false)
+                    Button(model.stopping ? "Stopping…" : model.monitoringActive ? "Stop monitoring" : "Start monitoring") {
+                        model.monitoringActive ? model.stop() : model.begin(once: false)
                     }.disabled(model.stopping || (model.sampling && !model.running))
                     Button("Overlay") { showOverlay() }
                 }.padding(20).cyberPanel()

@@ -85,7 +85,7 @@ public struct OpenEventRecord: Decodable {
         observations(session: session, since: since, now: now, uid: uid, rules: rules, associate: associate).first
     }
     public func observations(session: String, since: Date, now: Date = Date(), uid: UInt32 = getuid(), rules: [TripwireRule],
-                             associate: (Token) -> String?, executable: (Token) -> String? = { _ in nil }) -> [Observation] {
+                             associate: (Token) -> String?, executable: (Token) -> String? = { _ in nil }, limitations: [String] = OpenEventBridge.limits) -> [Observation] {
         guard let stamp = Self.timestamp(time), stamp >= since, (-1...10).contains(now.timeIntervalSince(stamp)),
               process.audit_token.ruid == uid, let launched = Self.timestamp(process.start_time), launched <= stamp,
               let targets = try? targets() else { return [] }
@@ -127,7 +127,7 @@ public struct OpenEventRecord: Decodable {
             // Retain only paths inside enabled boundaries, even for a rename.
             return Observation(key: id, eventClass: .file, component: file.path, attributes: attributes,
                 process: ProcessIdentity(pid: process.audit_token.pid, parentPID: process.ppid, uid: uid, executablePath: process.executable.path, launchTime: launched),
-                limitations: OpenEventBridge.limits, confidence: .moderate)
+                limitations: limitations, confidence: .moderate)
         }
     }
 
@@ -145,6 +145,16 @@ public final class OpenEventBridge {
     public static let descriptor = SensorDescriptor(id, "File activity event bridge", source: "Explicit eslogger open/write/close/rename/unlink JSONL input",
         monitors: "Reported file operations at enabled paths, scoped to the monitoring account or recognized AI identities",
         permissions: ["User-run eslogger requires administrator authorization and Full Disk Access for its responsible terminal"], limitations: limits)
+    public static let managedLimits = [
+        "TripWire-managed Apple eslogger diagnostic source, schema v1 only. Apple does not support eslogger as an application API; format, performance and availability can change. This is not a native Endpoint Security provider.",
+        limits[1], limits[2],
+        "Input comes from the bundled session helper through a private pipe. This has no system-extension integrity protection. eslogger suppresses its own process group. Loss remains unknown when sequences are unavailable.",
+        limits[4]
+    ]
+    public static let managedDescriptor = SensorDescriptor(id, "File activity monitor", source: "TripWire-managed eslogger open/write/close/rename/unlink notifications",
+        monitors: descriptor.monitors, permissions: ["Administrator approval to start the session helper", "Full Disk Access for the responsible app/tool, approved in macOS Settings"], limitations: managedLimits)
+    private let managed: Bool
+    private var source: SensorDescriptor { managed ? Self.managedDescriptor : Self.descriptor }
     private let store: EventStore
     private let started = Date(), session = UUID().uuidString
     private var sequence = SequenceLossTracker()
@@ -154,7 +164,7 @@ public final class OpenEventBridge {
     private var observedTypes = Set<UInt32>()
     private var rejectedFormat = 0, rejectedTime = 0
     private var latestInputAge: TimeInterval?
-    public init(store: EventStore) { self.store = store }
+    public init(store: EventStore, managed: Bool = false) { self.store = store; self.managed = managed }
     public func refresh() async throws {
         apps = await AIAppResourceSampler.applications(); rules = try store.tripwireRules()
         try heartbeat()
@@ -174,9 +184,9 @@ public final class OpenEventBridge {
             guard let path = Self.liveExecutable(token),
                   let app = self.apps.first(where: { $0.pid == token.pid && path.hasPrefix($0.bundlePath + "/") }) else { return nil }
             return app.name
-        }, executable: Self.liveExecutable)
+        }, executable: Self.liveExecutable, limitations: source.limitations)
         guard !observations.isEmpty else { return }
-        try store.ingest(CollectorSnapshot(descriptor: Self.descriptor, timestamp: stamp, observations: observations, complete: false, absenceReliable: false,
+        try store.ingest(CollectorSnapshot(descriptor: source, timestamp: stamp, observations: observations, complete: false, absenceReliable: false,
             state: .degraded, visibility: .limited, detail: "Scoped file-operation notification; not a complete inventory or an audit of input/contents."))
         retained += observations.count; lastEvent = stamp
     }
@@ -206,13 +216,13 @@ public final class OpenEventBridge {
             reportedInvalid = invalid
         }
         let current = lastValid.map { now.timeIntervalSince($0) < 10 } ?? false
-        try store.saveHealth(SensorHealth(descriptor: Self.descriptor, state: current ? .degraded : .error, visibility: current ? .limited : .unknown,
+        try store.saveHealth(SensorHealth(descriptor: source, state: current ? .degraded : .error, visibility: current ? .limited : .unknown,
             initialized: lastValid != nil, lastHeartbeat: now, lastSuccess: lastValid, lastEvent: lastEvent,
-            detail: "\(received) valid file reports received; \(retained) scoped records retained; \(invalid) rejected (\(rejectedFormat) format/metadata, \(rejectedTime) stale/time). Latest input age: \(latestInputAge.map { String(format: "%.2fs", $0) } ?? "unknown"). Observed event type IDs: \(observedTypes.sorted().map(String.init).joined(separator: ", ")). \(current ? "Event stream reporting with the stated limits. Subscribed event types are not verified by stdin; only observed types are known." : "No recent valid input: verify eslogger authorization and the foreground pipe. Silence cannot establish coverage.")"))
+            detail: "\(received) valid file reports received; \(retained) scoped records retained; \(invalid) rejected (\(rejectedFormat) format/metadata, \(rejectedTime) stale/time). Latest input age: \(latestInputAge.map { String(format: "%.2fs", $0) } ?? "unknown"). Observed event type IDs: \(observedTypes.sorted().map(String.init).joined(separator: ", ")). \(current ? "Event stream reporting with the stated limits; only observed event types are confirmed." : managed ? "No recent valid input. Open Tripwires → File monitoring to inspect permissions or retry. Silence cannot establish coverage." : "No recent valid input: verify eslogger authorization and the foreground pipe. Silence cannot establish coverage.")"))
     }
-    public func stop() throws {
-        try store.saveHealth(SensorHealth(descriptor: Self.descriptor, state: .stopped, visibility: .unknown, initialized: lastValid != nil,
-            lastHeartbeat: Date(), lastSuccess: lastValid, lastEvent: lastEvent, detail: "Foreground event bridge ended; file-open event coverage is off."))
+    public func stop(reason: String? = nil, failed: Bool = false) throws {
+        try store.saveHealth(SensorHealth(descriptor: source, state: failed ? .error : .stopped, visibility: .unknown, initialized: lastValid != nil,
+            lastHeartbeat: Date(), lastSuccess: lastValid, lastEvent: lastEvent, detail: reason ?? (managed ? "TripWire file monitoring stopped; file-operation event coverage is off." : "Foreground event bridge ended; file-open event coverage is off.")))
         try store.recordGap(CoverageGap(collector: Self.id, start: Date(), reason: "File-open event bridge stopped; brief access may be missed by snapshots."))
     }
 }

@@ -23,7 +23,7 @@ struct TripwiresPanel: View {
             }
             FileEventSetup()
             Label("Alerting only · No access blocking · Choose the account scope per rule", systemImage: "info.circle").foregroundStyle(accent)
-            Text("File rules use file/directory handle snapshots on macOS and Linux. The separately authorized macOS foreground event bridge can also capture brief opens. Application rules also inspect sampled process identities. Brief access, detached launches, aliases and unrecognized agents may be missed. An open file does not prove a read or write. Windows file-access monitoring remains unavailable.").font(.callout).foregroundStyle(CyberTheme.muted)
+            Text("File rules use file/directory handle snapshots on macOS and Linux. Enable in-app file monitoring below on macOS to also capture brief operations. Application rules inspect sampled process identities. Detached launches, aliases and unrecognized agents may be missed. An open file does not prove a read or write. Windows file-access monitoring remains unavailable.").font(.callout).foregroundStyle(CyberTheme.muted)
             if let error = model.configurationError { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
             if editing { editor }
             if rules.isEmpty && !editing {

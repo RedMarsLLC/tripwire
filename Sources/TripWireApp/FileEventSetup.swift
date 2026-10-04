@@ -1,33 +1,45 @@
 import SwiftUI
 import AppKit
 import TripWireCore
-import TripWireCollectors
 
 struct FileEventSetup: View {
     @EnvironmentObject var model: DashboardModel
-    @State private var expanded = false
-    private func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
-    private var command: String {
-        "/usr/bin/sudo /usr/bin/eslogger open write close rename unlink | " + quote(AgentIntegrationProbe.defaultExecutable.path) + " file-events --db " + quote(model.storeURL.path)
-    }
+    @State private var confirmAccess = false
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(model.fileEventsReporting ? "BRIEF-OPEN FEED REPORTING · LIMITED SCOPE" : "BRIEF FILE OPENS CAN BE MISSED · SETUP REQUIRED", systemImage: "exclamationmark.shield")
-                .font(.headline).foregroundStyle(model.fileEventsReporting ? accent : .orange)
-            Text(model.fileEventsReporting ? "The foreground open-event feed is reporting. Only configured paths are retained, using each rule’s AI-only or current-account scope. Inspect Sensor Status for source limits and interruptions." : "Your rule is saved, but open-file snapshots only see handles still open at check time. A file opened and closed between checks can produce no alert. Faster polling cannot guarantee catching it.")
-                .font(.callout).fixedSize(horizontal: false, vertical: true)
-            DisclosureGroup("Set up foreground event capture on macOS", isExpanded: $expanded) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("This optional diagnostic bridge uses Apple's eslogger file-operation notifications. It needs your explicit administrator authorization and Full Disk Access for the terminal running it. TripWire does not grant permissions or install a background service.")
-                    Text("1. In a terminal you authorize, enable Full Disk Access if required by macOS.\n2. Run the command below. Only eslogger runs as administrator; TripWire stays your normal user.\n3. Keep the terminal open. Verify a recent File activity event bridge report in Sensor Status before testing the boundary.\n4. Press Control-C to stop. The page will show when the feed stops reporting.")
-                    Text(command).font(.system(size: 11, design: .monospaced)).textSelection(.enabled).padding(12).background(.black.opacity(0.3))
-                    HStack {
-                        Button("Copy setup command") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(command, forType: .string) }
-                        Button("Inspect event-feed status ↗") { model.route = .coverage(.all) }
-                    }
-                    Text("Diagnostic format only, not a production Endpoint Security deployment. Unknown formats and stale reports are not treated as coverage. AI-only rules also require a validated recognized identity. A reported open is not proof of bytes read/written. No documents or tool arguments are retained. Standard input is unauthenticated and can be forged by the same user.").foregroundStyle(CyberTheme.muted)
-                }.font(.caption).padding(.top, 12)
-            }.foregroundStyle(accent)
+            Label("FILE MONITORING · IN APP", systemImage: "shield.lefthalf.filled")
+                .font(.headline).foregroundStyle(accent)
+            Text(model.fileMonitor.phase == .reporting ? "REPORTING · LIMITED COVERAGE" : model.fileMonitor.phase == .authorizing ? "WAITING FOR ADMINISTRATOR APPROVAL" : model.fileMonitor.phase == .stopping ? "STOPPING…" : model.fileMonitor.phase.active ? "WAITING FOR VALID FILE EVENTS" : "FILE EVENT MONITOR IS OFF")
+                .font(.headline).foregroundStyle(model.fileMonitor.phase == .reporting ? accent : .orange)
+            Text(model.fileMonitor.detail).font(.callout).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                if model.fileMonitor.phase.active {
+                    Button("Stop file monitoring") { model.fileMonitor.stop() }.disabled(model.fileMonitor.phase == .stopping)
+                } else {
+                    Button("Enable file monitoring…") { confirmAccess = true }
+                }
+                Button("Full Disk Access settings ↗") { model.fileMonitor.openPrivacySettings() }
+                Button("Inspect feed status ↗") { model.route = .coverage(.all) }
+            }
+            Text("No terminal or developer account needed. Approve the administrator prompt, grant TripWire Full Disk Access in macOS Settings, then quit and reopen TripWire if macOS requests it. Start file monitoring again after reopening. The helper runs only for this app session; Stop monitoring or quitting the app stops it.")
+                .font(.caption).foregroundStyle(CyberTheme.muted)
+            if model.fileEventsReporting && !model.fileMonitor.phase.active {
+                Text("A separate diagnostic receiver is reporting to this store. Stop that receiver before enabling the in-app monitor; TripWire will not start two feeds.").font(.caption).foregroundStyle(.orange)
+            }
+            DisclosureGroup("What this monitors and what access you are granting") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("The bundled session helper runs Apple's /usr/bin/eslogger with five fixed notification types: open, write, close, rename and unlink. Only configured paths are retained, using each rule's account or AI-associated scope. TripWire and its evidence store stay under your normal account.")
+                    Text("Full Disk Access is a broad macOS permission. TripWire retains path/process/operation metadata, not document contents, process arguments, environment values or mouse/keyboard input. Permissions are approved by you in System Settings and can be revoked there.")
+                    Text("This local compatibility source uses Apple's diagnostic tool and a deprecated administrator-launch API. It is not a native Endpoint Security deployment. macOS updates may make it unavailable; format errors, stale input and interruptions remain visible. No service, login item or permission is installed automatically. A production native provider still needs developer signing and Apple's entitlement; people using that release would not need developer accounts.")
+                    Text("A reported open does not prove bytes were read. Aliases, other accounts, unrecognized AI identities and event loss can leave gaps. File-handle snapshots continue independently and can miss brief activity.")
+                }.font(.caption).foregroundStyle(CyberTheme.muted).padding(.top, 8)
+            }
         }.padding(18).cyberPanel()
+        .alert("Enable file monitoring?", isPresented: $confirmAccess) {
+            Button("Enable") { model.fileMonitor.start(storeURL: model.storeURL) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("macOS will ask to run TripWire's bundled session helper as administrator. It starts only the fixed Apple event tool; it installs no service. Full Disk Access must also be approved in Settings. Only matching metadata is retained locally. Stopping monitoring or quitting TripWire ends the helper.")
+        }
     }
 }

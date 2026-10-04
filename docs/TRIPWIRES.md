@@ -12,7 +12,7 @@ The matching rule produces an elevated finding titled **Tripwire triggered: NAME
 
 Rules are evaluated against newly collected rows, including unchanged baseline rows. Existing baseline approval never exempts a configured boundary. Saving a rule does not reclassify stale inventory as a fresh access. There is one alert per rule revision, observed process instance and path/event class, retained across collector restarts. A new process instance can alert again; each distinct event-feed operation can also alert. Editing or re-enabling a rule starts a new revision; deleting or disabling a rule stops future matches while preserving existing findings and configuration history.
 
-Brief opens/reads can be entirely missed by snapshots. The dashboard now shows this setup gap explicitly. See [foreground event capture and its authorization requirements](FILE_EVENTS.md).
+Brief opens/reads can be entirely missed by snapshots. The dashboard now shows this setup gap explicitly. See [in-app file monitoring and its authorization requirements](FILE_EVENTS.md).
 
 Findings support [risk corrections and Open / Expected activity / False positive review status](RISK_REVIEW.md). A review never disables future rule matches.
 

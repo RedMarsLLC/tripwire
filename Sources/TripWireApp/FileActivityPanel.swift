@@ -60,7 +60,7 @@ struct FileActivityPanel: View {
             Text("\(attrs["associatedApp"] ?? "Unknown app") · PID \(attrs["pid"] ?? "unknown") · \(attrs["openMode"] ?? "Unknown open mode")").font(.headline)
             Text(attrs["operation"] ?? "Descriptor sampled; actual read/write unknown").font(.callout).foregroundStyle(accent)
             Text(attrs["executable"] ?? "Executable unavailable").font(.caption).textSelection(.enabled)
-            Text(record.collector == OpenEventBridge.id ? "Source: foreground file-operation report" : "Source: open-descriptor snapshot").font(.caption).foregroundStyle(accent)
+            Text(record.collector == OpenEventBridge.id ? "Source: scoped file-operation report" : "Source: open-descriptor snapshot").font(.caption).foregroundStyle(accent)
             Text("Last observed \(TimeText.iso(record.lastSeen)) · \(inLatestCheck(record) ? "in latest check" : "historical observation")").font(.caption).foregroundStyle(.secondary)
             Text(attrs["associationBasis"] ?? "Association basis unknown").font(.caption).foregroundStyle(.secondary)
             if let reason = attrs["reviewReason"] { Label(reason, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange) }

@@ -10,6 +10,7 @@ OUTPUT_DIR="dist"
 APP="$OUTPUT_DIR/TripWire.app"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/Helpers"
 # A running Mach-O must be replaced with a new inode. Overwriting it in place
 # can leave macOS's cached code-signature pages inconsistent and kill launches.
 copy_executable() {
@@ -22,6 +23,8 @@ copy_executable() {
 }
 cp LICENSE "$APP/Contents/Resources/LICENSE"
 copy_executable .build/release/TripWireApp "$APP/Contents/MacOS/TripWireApp"
+copy_executable .build/release/TripWireFileHelper "$APP/Contents/Helpers/TripWireFileHelper"
+/usr/bin/codesign --force --sign - --identifier local.tripwire.file-helper "$APP/Contents/Helpers/TripWireFileHelper"
 cp -R .build/release/TripWire_TripWireApp.bundle "$APP/Contents/Resources/"
 cp Sources/TripWireApp/Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 copy_executable .build/release/tripwire "$OUTPUT_DIR/tripwire"
