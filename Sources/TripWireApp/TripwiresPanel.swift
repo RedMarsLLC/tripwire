@@ -4,7 +4,7 @@ import TripWireCore
 
 struct TripwiresPanel: View {
     @EnvironmentObject var model: DashboardModel
-    @State private var draft = TripwireRule(name: "", path: "", kind: .folder)
+    @State private var draft = TripwireRule(name: "", path: "", kind: .folder, scope: .currentUser)
     @State private var editing = false
     private var rules: [TripwireRule] { model.view?.tripwires ?? [] }
     var body: some View {
@@ -12,18 +12,18 @@ struct TripwiresPanel: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Set the boundaries.").font(.system(size: 28, weight: .bold, design: .monospaced))
-                    Text("Choose files, folders and applications an AI agent should leave alone. A supported observation that matches a tripwire raises an alert with the evidence.").foregroundStyle(CyberTheme.muted).fixedSize(horizontal: false, vertical: true)
+                    Text("Choose protected files, folders and applications. Include all activity under your account or only recognized AI-associated processes. A supported observation that matches a tripwire raises an alert with the evidence.").foregroundStyle(CyberTheme.muted).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                Button("+ Lay a tripwire") { draft = TripwireRule(name: "", path: "", kind: .folder); editing = true }
+                Button("+ Lay a tripwire") { draft = TripwireRule(name: "", path: "", kind: .folder, scope: .currentUser); editing = true }
             }
             HStack(spacing: 12) {
                 MetricButton("Enabled boundaries", model.view == nil ? "—" : String(rules.filter(\.enabled).count), note: "Configuration is not live coverage", icon: "scope") { editing = true }
                 MetricButton("Recorded alerts", model.view == nil ? "—" : String(model.tripwireAlerts.count), note: "Inspect the rule and supporting evidence", icon: "bolt.shield") { model.route = .tripwireAlerts }
             }
             FileEventSetup()
-            Label("Alerting only · No access blocking · AI-associated activity only", systemImage: "info.circle").foregroundStyle(accent)
-            Text("File rules use file/directory handle snapshots on macOS and Linux. The separately authorized macOS foreground event bridge can also capture brief opens. Application rules also inspect sampled AI process ancestry. Brief access, detached launches, aliases and unrecognized agents may be missed. An open file does not prove a read or write. Windows file-access monitoring remains unavailable.").font(.callout).foregroundStyle(CyberTheme.muted)
+            Label("Alerting only · No access blocking · Choose the account scope per rule", systemImage: "info.circle").foregroundStyle(accent)
+            Text("File rules use file/directory handle snapshots on macOS and Linux. The separately authorized macOS foreground event bridge can also capture brief opens. Application rules also inspect sampled process identities. Brief access, detached launches, aliases and unrecognized agents may be missed. An open file does not prove a read or write. Windows file-access monitoring remains unavailable.").font(.callout).foregroundStyle(CyberTheme.muted)
             if let error = model.configurationError { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
             if editing { editor }
             if rules.isEmpty && !editing {
@@ -42,6 +42,7 @@ struct TripwiresPanel: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(rules.contains { $0.id == draft.id } ? "EDIT TRIPWIRE" : "NEW TRIPWIRE").font(.headline).foregroundStyle(CyberTheme.pink)
             TextField("Name, e.g. Private credentials", text: $draft.name).textFieldStyle(.roundedBorder).accessibilityLabel("Tripwire name")
+            Picker("Who triggers this?", selection: Binding(get: { draft.effectiveScope }, set: { draft.scope = $0 })) { ForEach(TripwireScope.allCases) { Text($0.label).tag($0) } }
             Picker("Boundary", selection: $draft.kind) { ForEach(TripwireKind.allCases) { Text($0.label).tag($0) } }.pickerStyle(.segmented)
             HStack {
                 TextField("Absolute path", text: $draft.path).textFieldStyle(.roundedBorder).accessibilityLabel("Tripwire target path")
@@ -51,7 +52,7 @@ struct TripwiresPanel: View {
             Toggle("Enabled for future observations", isOn: $draft.enabled).toggleStyle(.switch)
             Text("Saving does not open the target or start monitoring. Editing or re-enabling a rule begins a new alert cycle on the next matching snapshot.").font(.caption).foregroundStyle(CyberTheme.muted)
             HStack {
-                Button("Save tripwire") { if model.saveTripwire(draft) { editing = false; draft = TripwireRule(name: "", path: "", kind: .folder) } }
+                Button("Save tripwire") { if model.saveTripwire(draft) { editing = false; draft = TripwireRule(name: "", path: "", kind: .folder, scope: .currentUser) } }
                     .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty || draft.path.isEmpty)
                 Button("Cancel") { editing = false; model.configurationError = nil }
             }
@@ -81,7 +82,7 @@ struct TripwiresPanel: View {
     private func coverage(_ rule: TripwireRule) -> String {
         if !rule.enabled { return "Disabled · retained alerts remain available" }
         if model.readError != nil { return "Coverage unknown · evidence store is unreadable" }
-        if model.fileEventsReporting { return "Open-event feed reporting · scoped AI attribution and diagnostic source limits apply" }
+        if model.fileEventsReporting { return "Open-event feed reporting · rule scope and diagnostic source limits apply" }
         let ids = rule.kind == .application ? ["ai-open-files", "processes"] : ["ai-open-files"]
         let reporting = model.sensors.filter { ids.contains($0.id) && SensorPresentation($0).kind == .reporting }
         return reporting.isEmpty ? "Awaiting supported checks · start monitoring and inspect Sensor Status" : "SNAPSHOTS ONLY · brief file opens can be missed · enable event capture above"

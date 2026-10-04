@@ -124,8 +124,11 @@ class RiskCenter(QWidget):
         self.save.setEnabled(True); self.result.setText("Correction saved. Evidence retained; future alerts remain enabled." if success else message)
     def review_loaded(self,key,text):
         if key!="review:"+str(self.selected):return
-        try:history=json.loads(text)["history"]
+        try:
+            data=json.loads(text); history=data["history"]
         except (ValueError,KeyError,TypeError):self.history_text.setText("Review history unavailable. Refresh to retry.");return
+        if data.get("accessContext"):
+            self.evidence.setText(self.evidence.text()+"<p style='color:#0de8ff'><b>HOW WAS IT ACCESSED?</b></p><p>"+escape("\n\n".join(data["accessContext"])).replace("\n","<br>")+"</p>")
         self.history_text.setText("REVIEW HISTORY\n"+("\n\n".join(f"{datetime.fromtimestamp(r['timestamp']/1000,timezone.utc).isoformat()} · {r['previousLevel']} → {r['level']} · {r['previousStatus']} → {r['status']}\n{r['reason']}" for r in history) or "No corrections. Original classification retained."))
     def open_evidence(self):
         if not self.selected:return

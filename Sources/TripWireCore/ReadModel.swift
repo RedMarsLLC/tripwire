@@ -69,6 +69,9 @@ public enum Explain {
         PROCESS / COMPONENT
         \(finding.component)
 
+        HOW WAS IT ACCESSED?
+        \(related.compactMap(AccessContext.text).joined(separator: "\n\n"))
+
         TIMELINE (observation times)
         \(timeline.isEmpty ? "Evidence unavailable in this view" : timeline)
 

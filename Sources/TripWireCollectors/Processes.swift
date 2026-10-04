@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import TripWireCore
 
 public enum ProcessParser {
@@ -35,7 +36,7 @@ public struct ProcessCollector: Collector {
             }
             let path = process.executablePath ?? "UNKNOWN"
             let key = process.instanceKey ?? "unknown:\(process.pid ?? -1)"
-            return Observation(key: key, eventClass: .process, component: path, attributes: ["executable": path, "uid": process.uid.map(String.init) ?? "UNKNOWN", "teamID": process.teamID ?? "UNKNOWN", "signature": process.signatureStatus ?? "UNKNOWN"], process: process, limitations: descriptor.limitations, confidence: .moderate)
+            return Observation(key: key, eventClass: .process, component: path, attributes: ["collectorUID": String(getuid()), "executable": path, "uid": process.uid.map(String.init) ?? "UNKNOWN", "teamID": process.teamID ?? "UNKNOWN", "signature": process.signatureStatus ?? "UNKNOWN"], process: process, limitations: descriptor.limitations, confidence: .moderate)
         }
         return CollectorSnapshot(descriptor: descriptor, observations: observations, complete: result.valid, state: result.valid ? .degraded : .error, detail: result.valid ? "Periodic process inventory; execution continuity NOT OBSERVABLE" : "Process source failed or unrecognized rows; no removals inferred")
     }

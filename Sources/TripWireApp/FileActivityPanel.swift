@@ -23,8 +23,8 @@ struct FileActivityPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             FileEventSetup()
-            Text("AI-associated file observations").font(.title2.bold())
-            Text("Inspect held descriptors and scoped open-event reports, associated processes and the reason for a flag. File contents are never collected.").foregroundStyle(.secondary)
+            Text("File activity observations").font(.title2.bold())
+            Text("Inspect held descriptors and scoped file-operation reports, associated processes and the reason for a flag. File contents are never collected.").foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 9) {
                 Label("Open-file snapshots · limited visibility", systemImage: "doc.text.magnifyingglass").font(.headline).foregroundStyle(.orange)
                 if let sensor, model.readError == nil {
@@ -40,9 +40,9 @@ struct FileActivityPanel: View {
             }.padding(16).frame(maxWidth: .infinity, alignment: .leading).cyberPanel().clipShape(RoundedRectangle(cornerRadius: 10))
             HStack {
                 TextField("Search file path, app, process or review reason", text: $search).textFieldStyle(.roundedBorder)
-                Toggle("Latest snapshots / opens in last minute", isOn: $latestOnly).toggleStyle(.checkbox)
+                Toggle("Latest snapshots / events in last minute", isOn: $latestOnly).toggleStyle(.checkbox)
             }
-            Text("\(records.count) matching records · snapshot rows are held-descriptor metadata; event-feed rows are individual reported opens. Last observed does not mean still open.").font(.caption).foregroundStyle(.secondary)
+            Text("\(records.count) matching records · snapshot rows are held-descriptor metadata; event-feed rows are individual reported operations. Last observed does not mean still open.").font(.caption).foregroundStyle(.secondary)
             if let lookupError { Text(lookupError).foregroundStyle(.orange) }
             if records.isEmpty {
                 Text("No matching open-file observations in this view. This does not establish that an agent accessed no files. Turn off Latest check only to inspect retained history.").foregroundStyle(.secondary)
@@ -58,8 +58,9 @@ struct FileActivityPanel: View {
         return VStack(alignment: .leading, spacing: 8) {
             Text(observation.component).font(.system(.body, design: .monospaced)).foregroundStyle(accent).textSelection(.enabled)
             Text("\(attrs["associatedApp"] ?? "Unknown app") · PID \(attrs["pid"] ?? "unknown") · \(attrs["openMode"] ?? "Unknown open mode")").font(.headline)
+            Text(attrs["operation"] ?? "Descriptor sampled; actual read/write unknown").font(.callout).foregroundStyle(accent)
             Text(attrs["executable"] ?? "Executable unavailable").font(.caption).textSelection(.enabled)
-            Text(record.collector == OpenEventBridge.id ? "Source: foreground open-event report" : "Source: open-descriptor snapshot").font(.caption).foregroundStyle(accent)
+            Text(record.collector == OpenEventBridge.id ? "Source: foreground file-operation report" : "Source: open-descriptor snapshot").font(.caption).foregroundStyle(accent)
             Text("Last observed \(TimeText.iso(record.lastSeen)) · \(inLatestCheck(record) ? "in latest check" : "historical observation")").font(.caption).foregroundStyle(.secondary)
             Text(attrs["associationBasis"] ?? "Association basis unknown").font(.caption).foregroundStyle(.secondary)
             if let reason = attrs["reviewReason"] { Label(reason, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange) }

@@ -214,7 +214,7 @@ public final class EventStore {
             guard let audited else { throw TripWireError.message("Tripwire no longer exists") }
             try change(&rules)
             try setMetadata("tripwire-rules-v1", String(decoding: try JSONEncoder.stable.encode(rules), as: UTF8.self))
-            let attrs = ["ruleID": audited.id, "name": audited.name, "path": audited.path, "kind": audited.kind.rawValue, "enabled": String(audited.enabled), "revision": audited.revision]
+            let attrs = ["ruleID": audited.id, "name": audited.name, "path": audited.path, "kind": audited.kind.rawValue, "enabled": String(audited.enabled), "revision": audited.revision, "scope": audited.effectiveScope.rawValue]
             let observation = Observation(key: audited.id, eventClass: .configuration, component: audited.name, attributes: attrs)
             let event = EvidenceEvent(timestamp: Date(), sourceCollector: "tripwire-configuration", eventType: action, observation: observation, currentState: action == "DELETED" ? nil : attrs, baselineStatus: .unknown,
                 evidence: ["Explicit local configuration change. No target was opened or modified. Rules apply to future observed snapshots; this is not a detection."], limitations: ["Rules alert on supported evidence and do not block access."])

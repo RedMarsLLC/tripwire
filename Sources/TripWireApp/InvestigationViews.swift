@@ -42,6 +42,11 @@ struct FindingDetail: View {
             FindingReviewEditor(finding: finding).id(finding.id)
             explanation("What was found", finding.whatHappened, icon: "eye")
             explanation("Why it was flagged", evidence?.explanation(for: finding) ?? finding.whyFlagged, icon: "flag")
+            if let evidence {
+                ForEach(evidence.events.filter { AccessContext.text($0) != nil }) { event in
+                    explanation("How was it accessed?", AccessContext.text(event) ?? "Unknown", icon: "point.3.connected.trianglepath.dotted")
+                }
+            }
             explanation("Which agent caused this?", associationExplanation, icon: "person.crop.circle.badge.questionmark")
             HStack(alignment: .top, spacing: 24) {
                 explanation("Observation confidence", finding.confidence.rawValue, icon: "checkmark.magnifyingglass")

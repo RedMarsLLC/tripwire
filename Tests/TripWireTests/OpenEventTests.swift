@@ -61,6 +61,43 @@ final class OpenEventTests: XCTestCase {
         rule.updatedAt = stamp.addingTimeInterval(-1)
         XCTAssertEqual(TripwireMatcher.matches(snapshot, rules: [rule]).count, 1)
     }
+    func testCurrentAccountScopeRetainsUnrecognizedProcessAndExplainsInputUnknown() throws {
+        let rule = TripwireRule(name: "TEST account", path: "/test-only/protected", kind: .folder, scope: .currentUser)
+        let row = try OpenEventRecord.decode(fixture())
+        let observation = try XCTUnwrap(row.observation(session: "TEST", since: stamp.addingTimeInterval(-1), now: stamp, uid: 501, rules: [rule], associate: { _ in nil }))
+        XCTAssertNil(observation.attributes["associatedApp"])
+        XCTAssertTrue(AccessContext.isMonitoringAccount(observation))
+        let snapshot = CollectorSnapshot(descriptor: OpenEventBridge.descriptor, timestamp: stamp, observations: [observation], state: .degraded, visibility: .limited, detail: "TEST ONLY")
+        let aiOnly = TripwireRule(name: "TEST AI", path: rule.path, kind: .folder)
+        XCTAssertEqual(TripwireMatcher.matches(snapshot, rules: [rule, aiOnly]).map { $0.rule.id }, [rule.id])
+        XCTAssertNil(row.observation(session: "TEST", since: stamp.addingTimeInterval(-1), now: stamp, uid: 502, rules: [rule], associate: { _ in nil }))
+        let evidence = EvidenceEvent(timestamp: stamp, sourceCollector: OpenEventBridge.id, eventType: "TEST", observation: observation, currentState: observation.attributes, baselineStatus: .unknown)
+        let text = try XCTUnwrap(AccessContext.text(evidence))
+        XCTAssertTrue(text.contains("UID 501")); XCTAssertTrue(text.contains("Mouse vs keyboard vs automation: Unknown"))
+        XCTAssertTrue(text.contains("AI association: Unknown"))
+    }
+    func testMutationKindsAndRenameBoundaryRolesStayDistinct() throws {
+        let rule = TripwireRule(name: "TEST account", path: "/test-only/protected", kind: .folder, scope: .currentUser)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture()) as? [String: Any])
+        let file: [String: Any] = ["path": rule.path + "/test", "path_truncated": false, "stat": ["st_mode": S_IFREG | 0o600]]
+        for (type, name) in [(ES_EVENT_TYPE_NOTIFY_WRITE, "write"), (ES_EVENT_TYPE_NOTIFY_CLOSE, "close"), (ES_EVENT_TYPE_NOTIFY_UNLINK, "unlink")] {
+            object["event_type"] = type.rawValue; object["event"] = [name: ["target": file, "modified": true]]
+            let decoded = try OpenEventRecord.decode(JSONSerialization.data(withJSONObject: object))
+            let row = try XCTUnwrap(decoded.observation(session: "TEST", since: stamp.addingTimeInterval(-1), now: stamp, uid: 501, rules: [rule], associate: { _ in nil }))
+            XCTAssertFalse(row.attributes["operation"]!.hasPrefix("Open")); XCTAssertNil(row.attributes["openMode"])
+        }
+        object["event_type"] = ES_EVENT_TYPE_NOTIFY_CLOSE.rawValue; object["event"] = ["close": ["target": file, "modified": false]]
+        XCTAssertNil(try OpenEventRecord.decode(JSONSerialization.data(withJSONObject: object)).observation(session: "TEST", since: stamp.addingTimeInterval(-1), now: stamp, uid: 501, rules: [rule], associate: { _ in nil }))
+        object["event_type"] = ES_EVENT_TYPE_NOTIFY_RENAME.rawValue
+        object["event"] = ["rename": ["source": file, "destination_type": ES_DESTINATION_TYPE_NEW_PATH.rawValue, "destination": ["new_path": ["dir": ["path": rule.path, "path_truncated": false], "filename": "renamed"]]]]
+        var rows = try OpenEventRecord.decode(JSONSerialization.data(withJSONObject: object)).observations(session: "TEST", since: stamp.addingTimeInterval(-1), now: stamp, uid: 501, rules: [rule], associate: { _ in nil })
+        XCTAssertEqual(rows.count, 2); XCTAssertEqual(Set(rows.map(\.key)).count, 2)
+        let exact = TripwireRule(name: "TEST exact", path: rule.path + "/test", kind: .file, scope: .currentUser)
+        rows = try OpenEventRecord.decode(JSONSerialization.data(withJSONObject: object)).observations(session: "TEST", since: stamp.addingTimeInterval(-1), now: stamp, uid: 501, rules: [exact], associate: { _ in nil })
+        XCTAssertEqual(rows.count, 1); XCTAssertEqual(rows.first?.attributes["pathRole"], "source")
+        object["event_type"] = ES_EVENT_TYPE_NOTIFY_EXEC.rawValue
+        XCTAssertThrowsError(try OpenEventRecord.decode(JSONSerialization.data(withJSONObject: object)))
+    }
     func testInvalidStreamAndStopCannotAppearHealthy() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("tripwire-bridge-test-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }

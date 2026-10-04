@@ -332,6 +332,7 @@ class Dashboard(QMainWindow):
         form.addWidget(button("+ New tripwire",self.new_rule))
         fields=QFormLayout(); form.addLayout(fields)
         self.rule_name=QLineEdit(); self.rule_name.setPlaceholderText("Private credentials"); fields.addRow("Name",self.rule_name)
+        self.rule_scope=QComboBox(); self.rule_scope.addItem("Any process under my account", "current-user"); self.rule_scope.addItem("AI-associated processes only", "ai-associated"); fields.addRow("Who triggers this?",self.rule_scope)
         self.rule_kind=QComboBox(); self.rule_kind.addItems(["folder","file","application"]); fields.addRow("Boundary",self.rule_kind)
         self.rule_path=QLineEdit(); self.rule_path.setPlaceholderText("Absolute target path"); fields.addRow("Path",self.rule_path)
         form.addWidget(button("Choose path…",self.choose_rule_path))
@@ -341,10 +342,10 @@ class Dashboard(QMainWindow):
         self.rule_delete=button("Delete",self.delete_rule); self.rule_delete.setEnabled(False); actions.addWidget(self.rule_delete)
         self.config_status=QLabel("Choose a boundary and save. No target is opened or modified."); self.config_status.setWordWrap(True); self.config_status.setTextFormat(Qt.TextFormat.PlainText); form.addWidget(self.config_status)
         self.rule_coverage=QLabel(); self.rule_coverage.setWordWrap(True); self.rule_coverage.setTextFormat(Qt.TextFormat.PlainText); form.addWidget(self.rule_coverage)
-        note=QLabel("AI-associated activity only. File/folder rules match file/directory handle snapshots. Brief opens are not reliably captured by polling. Applications also match sampled AI process ancestry. Brief access, aliases, detached launches and unrecognized agents may be missed. Windows file monitoring is unavailable. Saving does not start monitoring; editing or re-enabling starts a new alert cycle on the next match."); note.setWordWrap(True); note.setObjectName("eyebrow"); form.addWidget(note); form.addStretch()
+        note=QLabel("Choose all processes under your account or only recognized AI-associated activity. Mouse/keyboard input is not observed. File/folder rules match file/directory handle snapshots. Brief opens are not reliably captured by polling. Applications also match sampled AI process ancestry. Brief access, aliases, detached launches and unrecognized agents may be missed. Windows file monitoring is unavailable. Saving does not start monitoring; editing or re-enabling starts a new alert cycle on the next match."); note.setWordWrap(True); note.setObjectName("eyebrow"); form.addWidget(note); form.addStretch()
         return widget
     def new_rule(self):
-        self.editing_rule=None; self.rule_name.clear(); self.rule_path.clear(); self.rule_kind.setCurrentText("folder"); self.rule_enabled.setChecked(True); self.rule_delete.setEnabled(False)
+        self.editing_rule=None; self.rule_scope.setCurrentIndex(0); self.rule_name.clear(); self.rule_path.clear(); self.rule_kind.setCurrentText("folder"); self.rule_enabled.setChecked(True); self.rule_delete.setEnabled(False)
         self.config_status.setText("New boundary · no target is opened or modified")
     def choose_rule_path(self):
         kind=self.rule_kind.currentText()
@@ -354,7 +355,7 @@ class Dashboard(QMainWindow):
             self.rule_path.setText(value)
             if not self.rule_name.text(): self.rule_name.setText(Path(value).name)
     def save_rule(self):
-        args=["save","--name",self.rule_name.text(),"--path",self.rule_path.text(),"--kind",self.rule_kind.currentText()]
+        args=["save","--name",self.rule_name.text(),"--path",self.rule_path.text(),"--kind",self.rule_kind.currentText(),"--scope",self.rule_scope.currentData()]
         if self.editing_rule: args.extend(["--id",self.editing_rule])
         if not self.rule_enabled.isChecked(): args.append("--disabled")
         self.rule_save.setEnabled(False); self.rule_delete.setEnabled(False); self.engine.configure_rule(args)
@@ -435,7 +436,7 @@ class Dashboard(QMainWindow):
         self.inspection = False
         row = self.rows[index]; self.selection = record_key(row); self.detail_key = ""
         if self.page=="Tripwires":
-            self.editing_rule=row["id"]; self.rule_name.setText(row["name"]); self.rule_path.setText(row["path"]); self.rule_kind.setCurrentText(row["kind"]); self.rule_enabled.setChecked(row["enabled"]); self.rule_delete.setEnabled(True)
+            self.rule_scope.setCurrentIndex(self.rule_scope.findData(row.get("scope") or "ai-associated")); self.editing_rule=row["id"]; self.rule_name.setText(row["name"]); self.rule_path.setText(row["path"]); self.rule_kind.setCurrentText(row["kind"]); self.rule_enabled.setChecked(row["enabled"]); self.rule_delete.setEnabled(True)
             self.config_status.setText("Editing this boundary. Existing evidence is retained."); return
         if "whyFlagged" in row:
             sections = [("WHAT WAS FOUND",row["whatHappened"]),("WHY FLAGGED",row["whyFlagged"]),("BASELINE",row["baselineDifference"]),("INTENT",row.get("intent","UNKNOWN")),("LIMITATIONS","\n".join(row.get("limitations",[]))),("NEXT STEPS","\n".join(row.get("suggestedInvestigation",[])))]

@@ -4,7 +4,7 @@ import TripWireTerminal
 
 enum ReviewCommand {
     static let usage = "tripwire review FINDING-ID [--level critical|high|medium|low|unassessed --status open|expected|false-positive --reason TEXT --expected-review UUID|none] [--json]"
-    struct ReviewView: Encodable { var assessment: FindingAssessment; var history: [FindingReview] }
+    struct ReviewView: Encodable { var assessment: FindingAssessment; var history: [FindingReview]; var accessContext: [String] }
     static func run(_ args: [String], url: URL, json: Bool) throws {
         guard let id = args.first else { throw TripWireError.message(usage) }
         let reader = try EventStore(url: url, access: .readOnly)
@@ -21,7 +21,7 @@ enum ReviewCommand {
         }
         let history = try reader.findingReviews().filter { $0.findingID == id }
         let assessment = FindingAssessment(finding: finding, reviews: history)
-        if json { print(String(decoding: try JSONEncoder.stable.encode(ReviewView(assessment: assessment, history: history)), as: UTF8.self)) }
+        if json { print(String(decoding: try JSONEncoder.stable.encode(ReviewView(assessment: assessment, history: history, accessContext: try finding.eventIDs.compactMap { try reader.event(id: $0) }.compactMap(AccessContext.text))), as: UTF8.self)) }
         else {
             print(TerminalText.safe("\(assessment.level.label) · \(assessment.status.label) · original suggestion: \(assessment.suggestedLevel.label)"))
             for review in history { print(TerminalText.safe("\(TimeText.iso(review.timestamp)) · \(review.level.label) / \(review.status.label): \(review.reason)")) }

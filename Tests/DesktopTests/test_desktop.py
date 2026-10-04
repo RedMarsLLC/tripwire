@@ -1,6 +1,7 @@
 """Offscreen UI + actual CLI integration checks; no fixtures in live targets."""
 import json
 import sqlite3
+from contextlib import closing
 import uuid
 import os
 from pathlib import Path
@@ -91,7 +92,7 @@ class DesktopTests(unittest.TestCase):
         self.wait_for(lambda: bool(self.engine.snapshot.get("tripwires")))
         fixture_id=str(uuid.uuid4())
         finding={"id":fixture_id,"timestamp":time.time()*1000,"title":"TEST ONLY: boundary opened","whatHappened":"Synthetic open-event evidence for this UI test.","whyFlagged":"An enabled test boundary matched.","component":"TEST ONLY protected path","eventIDs":[],"baselineDifference":"Fixture","confidence":"MODERATE","severity":"ELEVATED","limitations":["TEST ONLY; no live observation"],"suggestedInvestigation":["Inspect the fixture evidence"],"intent":"UNKNOWN","ruleID":"test-fixture"}
-        with sqlite3.connect(self.engine.database) as connection:
+        with closing(sqlite3.connect(self.engine.database)) as connection, connection:
             connection.execute("INSERT INTO findings VALUES (?,?,?)",(fixture_id,finding["timestamp"]/1000,json.dumps(finding)))
         self.engine.refresh(); self.wait_for(lambda: self.engine.snapshot.get("riskCounts",{}).get("high")==1)
         self.dashboard.open_page("Overview"); center=self.dashboard.risk_center
@@ -103,7 +104,7 @@ class DesktopTests(unittest.TestCase):
         center.filter_level(None); center.scope.setCurrentText("Reviewed"); self.assertEqual(center.selected,fixture_id)
         self.assertEqual(center.risk.currentData(),"low"); self.assertEqual(center.status.currentData(),"false-positive")
         self.wait_for(lambda:"TEST: this activity was authorized" in center.history_text.text())
-        with sqlite3.connect(self.engine.database) as connection:
+        with closing(sqlite3.connect(self.engine.database)) as connection, connection:
             retained=json.loads(connection.execute("SELECT json FROM findings WHERE id=?",(fixture_id,)).fetchone()[0])
             self.assertEqual(retained,finding)
         center.risk.setCurrentIndex(center.risk.findData("critical")); center.status.setCurrentIndex(center.status.findData("open")); center.reason.setText("TEST: reopen for additional investigation"); center.save.click()
@@ -122,12 +123,14 @@ class DesktopTests(unittest.TestCase):
         self.dashboard.rule_save.click()
         self.wait_for(lambda: len(self.engine.snapshot.get("tripwires",[]))==1)
         self.assertFalse(target.exists())
+        self.assertEqual(self.engine.snapshot["tripwires"][0]["scope"],"current-user")
         self.assertEqual(self.engine.snapshot["sampledAt"],"NEVER")
         self.assertEqual(self.engine.snapshot["findingsCount"],0)
         self.dashboard.list.setCurrentRow(0)
         self.assertEqual(self.dashboard.rule_name.text(),"Private data")
-        self.dashboard.rule_enabled.setChecked(False); self.dashboard.rule_save.click()
+        self.dashboard.rule_scope.setCurrentIndex(self.dashboard.rule_scope.findData("ai-associated")); self.dashboard.rule_enabled.setChecked(False); self.dashboard.rule_save.click()
         self.wait_for(lambda: not self.engine.snapshot["tripwires"][0]["enabled"])
+        self.assertEqual(self.engine.snapshot["tripwires"][0]["scope"],"ai-associated")
         self.dashboard.list.setCurrentRow(0); self.dashboard.show_row(0)
         self.dashboard.rule_delete.click()
         self.wait_for(lambda: not self.engine.snapshot.get("tripwires"))

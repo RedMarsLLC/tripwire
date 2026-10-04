@@ -5,7 +5,7 @@ public enum CollectorRegistry {
     public static func make(storeURL: URL) -> [any Collector] {
         var sources: [any Collector] = [ProcessCollector(), NetworkCollector()]
         #if os(Linux)
-        sources += [AIFileAccessCollector(), LinuxKernelCollector()]
+        sources += [AIFileAccessCollector(storeURL: storeURL), LinuxKernelCollector()]
         #endif
         return sources + unavailable.map { $0 as any Collector }
     }

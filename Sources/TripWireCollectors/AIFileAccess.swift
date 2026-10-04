@@ -5,19 +5,23 @@ import TripWireCore
 /// Metadata from open vnode descriptors only. Never opens or reads the target files.
 public struct AIFileAccessCollector: Collector {
     public static let id = "ai-open-files"
-    public let descriptor = SensorDescriptor(id, "AI open-file snapshots", source: "libproc process identities and open vnode descriptors",
-        monitors: "Path metadata for regular files and directories held open by recognized same-user AI desktop apps and observed descendants; every 2 seconds while monitoring",
+    public let descriptor = SensorDescriptor(id, "File-handle snapshots", source: "libproc process identities and open vnode descriptors",
+        monitors: "Path metadata for regular files and directories held open by recognized same-user AI desktop apps and observed descendants; plus configured current-account boundaries; every 2 seconds while monitoring",
         limitations: [
             "Snapshots miss short-lived opens, closed files, memory-mapped files after close, and activity between checks. This is not a read/write event audit; loss is UNKNOWN.",
             "Read/write mode describes an open descriptor's capability, not proof that bytes were read or written. A descriptor can be inherited or passed from another process.",
             "App association uses bundle paths and sampled parent links, not signature attestation or proof of an AI action. Reparented, detached, other-user, protected and unrecognized agents may be missed.",
-            "Recognized desktop apps: Codex, ChatGPT, Claude, Cursor, Ollama and LM Studio. Standalone CLI agents without a visible recognized ancestor are outside scope.",
+            "Recognized desktop apps: Codex, ChatGPT, Claude, Cursor, Ollama and LM Studio. Other processes are retained only for explicitly configured current-account boundaries.",
             "Only path/process/open-mode metadata is retained locally. No target file contents, arguments or environment values are read. Missing entries never establish deletion or no access."
         ])
-    public init() {}
+    private let storeURL: URL?
+    public init(storeURL: URL? = nil) { self.storeURL = storeURL }
     public func collect() async -> CollectorSnapshot {
         let apps = await AIAppResourceSampler.applications()
-        return Self.snapshot(apps: apps, inventory: Self.processes(), metadata: AIAppResourceSampler.metadata, files: Self.openFiles)
+        let rules: [TripwireRule]
+        do { rules = try storeURL.map { try EventStore(url: $0, access: .readOnly).tripwireRules() } ?? [] }
+        catch { return CollectorSnapshot(descriptor: descriptor, state: .error, visibility: .unknown, detail: "Tripwire configuration could not be read; file scope is unknown.") }
+        return Self.snapshot(rules: rules, apps: apps, inventory: Self.processes(), metadata: AIAppResourceSampler.metadata, files: Self.openFiles)
     }
 
     struct ProcessList { var values: [AIAppResourceSampler.ProcessMetadata]; var partial: Bool; var failed = false }
@@ -79,12 +83,13 @@ public struct AIFileAccessCollector: Collector {
         return result
     }
 
-    static func snapshot(apps: [AIApplication], inventory: ProcessList,
+    static func snapshot(rules: [TripwireRule] = [], apps: [AIApplication], inventory: ProcessList,
                          metadata: (Int32) -> AIAppResourceSampler.ProcessMetadata?, files: (Int32) -> FileList,
                          home: String = FileManager.default.homeDirectoryForCurrentUser.path,
                          now: Date = Date(), maxFiles: Int = 2048, maxProcesses: Int = 128) -> CollectorSnapshot {
         let descriptor = Self().descriptor
-        if apps.isEmpty {
+        let accountRules = rules.filter { $0.enabled && $0.platform == .macOS && $0.effectiveScope == .currentUser }
+        if apps.isEmpty && accountRules.isEmpty {
             return CollectorSnapshot(descriptor: descriptor, timestamp: now, complete: true, absenceReliable: false,
                 detail: "No recognized AI desktop apps running at this check. Standalone CLI and unrecognized agents are outside scope; this does not establish no file access.")
         }
@@ -95,7 +100,13 @@ public struct AIFileAccessCollector: Collector {
         let owners = AIAppResourceSampler.owners(apps: apps, processes: inventory.values)
         var partial = inventory.partial
         var samples: [Int32: FileList] = [:]
-        let selected = inventory.values.filter { owners[$0.pid] != nil }
+        var selected = inventory.values.filter { owners[$0.pid] != nil || !accountRules.isEmpty }.sorted { $0.pid < $1.pid }
+        // Rotate bounded account-wide checks so high PIDs are not permanently
+        // excluded by a large user's process inventory.
+        if !accountRules.isEmpty && selected.count > maxProcesses && maxProcesses > 0 {
+            let offset = (Int(ProcessInfo.processInfo.systemUptime / 2) * maxProcesses) % selected.count
+            selected = Array(selected[offset...] + selected[..<offset])
+        }
         var denied = 0, attempted = 0
         let deadline = ProcessInfo.processInfo.systemUptime + 1.5
         for process in selected.prefix(maxProcesses) {
@@ -108,7 +119,7 @@ public struct AIFileAccessCollector: Collector {
         partial = partial || selected.count > attempted
         // Validate every ancestry node after the file sample, not just the final holder.
         let stable = inventory.values.filter { process in
-            guard owners[process.pid] != nil else { return false }
+            guard owners[process.pid] != nil || samples[process.pid] != nil else { return false }
             guard let after = metadata(process.pid), after.started == process.started,
                   after.path == process.path, after.parent == process.parent else { partial = true; return false }
             return true
@@ -116,15 +127,19 @@ public struct AIFileAccessCollector: Collector {
         let stableOwners = AIAppResourceSampler.owners(apps: apps, processes: stable)
         var observations: [String: Observation] = [:]
         for process in stable {
-            guard let appID = stableOwners[process.pid], appID == owners[process.pid], let list = samples[process.pid],
-                  let app = apps.first(where: { $0.id == appID }) else { continue }
-            for file in list.values {
+            guard let list = samples[process.pid] else { continue }
+            let app = stableOwners[process.pid].flatMap { id in id == owners[process.pid] ? apps.first { $0.id == id } : nil }
+            for file in list.values where app != nil || accountRules.contains(where: { TripwirePath.matches(file.path, rule: $0) }) {
                 let key = Digest.sha256(Data("\(process.pid):\(process.started):\(process.path):\(file.device):\(file.inode):\(file.path):\(file.flags & (3 | UInt32(O_EVTONLY)))".utf8))
                 if observations[key] == nil && observations.count >= maxFiles { partial = true; continue }
-                var attrs = ["path": file.path, "associatedApp": app.name, "associatedAppID": app.id,
+                var attrs = ["path": file.path, "collectorUID": String(getuid()), "operation": "Open descriptor sampled; actual read/write unknown",
                              "objectType": file.isDirectory ? "Directory" : "Regular file",
-                             "openMode": file.mode, "executable": process.path, "pid": String(process.pid),
-                             "associationBasis": process.path.hasPrefix(app.bundlePath + "/") ? "Executable inside recognized app bundle" : "Observed parent chain to recognized app bundle"]
+                             "openMode": file.mode, "executable": process.path, "pid": String(process.pid)]
+                if let app {
+                    attrs["associatedApp"] = app.name; attrs["associatedAppID"] = app.id
+                    attrs["associationBasis"] = process.path.hasPrefix(app.bundlePath + "/") ? "Executable inside recognized app bundle" : "Observed parent chain to recognized app bundle"
+                }
+                if let parent = stable.first(where: { $0.pid == process.parent && $0.started <= process.started }) { attrs["parentExecutable"] = parent.path }
                 if let reason = FileAccessReview.reason(path: file.path, home: home) { attrs["reviewReason"] = reason }
                 let identity = ProcessIdentity(pid: process.pid, parentPID: process.parent, uid: getuid(), executablePath: process.path,
                     launchTime: Date(timeIntervalSince1970: Double(process.started) / 1_000_000))
@@ -135,6 +150,6 @@ public struct AIFileAccessCollector: Collector {
         let emptyPartial = observations.isEmpty && partial
         return CollectorSnapshot(descriptor: descriptor, timestamp: now, observations: observations.values.sorted { $0.key < $1.key },
             complete: !partial, absenceReliable: false, state: emptyPartial ? .error : .degraded, visibility: emptyPartial ? .unknown : .limited,
-            detail: "\(observations.count) distinct open-file records observed across \(attempted) checked AI-associated processes. \(denied) process checks reported access denial. \(partial ? "Partial snapshot: some processes/descriptors changed, were unreadable or exceeded the sampling bounds. " : "")Checks target 2-second intervals; brief accesses and actual reads/writes are not audited. App association is not proof of an AI action.")
+            detail: "\(observations.count) distinct open-file records observed across \(attempted) checked processes within the configured scope. \(denied) process checks reported access denial. \(partial ? "Partial snapshot: some processes/descriptors changed, were unreadable or exceeded the sampling bounds. " : "")Checks target 2-second intervals; brief accesses and actual reads/writes are not audited. App association is not proof of an AI action.")
     }
 }

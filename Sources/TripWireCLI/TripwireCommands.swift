@@ -3,7 +3,7 @@ import TripWireCore
 import TripWireTerminal
 
 enum TripwireCommands {
-    static let usage = "tripwire tripwires [list | save --name NAME --path ABSOLUTE-PATH --kind file|folder|application [--id UUID] [--disabled] | enable UUID | disable UUID | delete UUID] [--json] [--db PATH]"
+    static let usage = "tripwire tripwires [list | save --name NAME --path ABSOLUTE-PATH --kind file|folder|application [--scope current-user|ai-associated] [--id UUID] [--disabled] | enable UUID | disable UUID | delete UUID] [--json] [--db PATH]"
     static func run(_ arguments: [String], url: URL, json: Bool) throws {
         let command = arguments.first ?? "list"
         let rest = Array(arguments.dropFirst())
@@ -25,9 +25,12 @@ enum TripwireCommands {
             }
             guard let name = try take("--name"), let path = try take("--path"), let kindText = try take("--kind"), let kind = TripwireKind(rawValue: kindText) else { throw TripWireError.message(usage) }
             let id = try take("--id") ?? UUID().uuidString
+            let requestedScope = try take("--scope")
+            let previous = try? EventStore(url: url, access: .readOnly).tripwireRules().first { $0.id == id }
+            guard let scope = requestedScope.map({ TripwireScope(rawValue: $0) }) ?? (previous?.effectiveScope ?? .currentUser) else { throw TripWireError.message(usage) }
             let disabled = options == ["--disabled"]
             guard options.isEmpty || disabled else { throw TripWireError.message(usage) }
-            let rule = try TripwireRule(id: id, name: name, path: path, kind: kind, enabled: !disabled).validated()
+            let rule = try TripwireRule(id: id, name: name, path: path, kind: kind, enabled: !disabled, scope: scope).validated()
             try EventStore(url: url).saveTripwire(rule)
             print("Tripwire saved. It applies to future supported observations while monitoring is running.")
         case "enable", "disable", "delete":

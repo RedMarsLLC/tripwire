@@ -4,7 +4,7 @@ A saved tripwire is a policy, not proof that a collector can see every access. T
 
 ## Explicit foreground diagnostic feed
 
-`tripwire file-events` accepts a bounded JSONL stream of Apple's `eslogger open` notifications. It does not launch a privileged process, grant permissions, install a service or modify the target. Only matching enabled rule paths with recognized, same-user AI audit identity associations are retained. No target contents, process arguments, environment values or raw JSON are saved.
+`tripwire file-events` accepts a bounded JSONL stream of Apple's `eslogger open write close rename unlink` notifications. It does not launch a privileged process, grant permissions, install a service or modify the target. Only matching enabled rule paths are retained. Choose **Any process under my account** to include manual apps, command-line tools and unrecognized AI helpers. Legacy rules retain their original AI-only scope until edited. No target contents, process arguments, environment values or raw JSON are saved.
 
 This is an optional **diagnostic bridge**, not a stable production Endpoint Security deployment. Apple documents eslogger as a debugging tool; its JSON format is not a promised application API. The bridge accepts schema version 1 and fails closed on unsupported, truncated, oversized or stale records.
 
@@ -12,11 +12,11 @@ This is an optional **diagnostic bridge**, not a stable production Endpoint Secu
 2. Build the CLI, configure the boundary in the app, then run the following from the repository. Keep the pipe in the foreground:
 
    ```sh
-   /usr/bin/sudo /usr/bin/eslogger open | ./dist/tripwire file-events
+   /usr/bin/sudo /usr/bin/eslogger open write close rename unlink | ./dist/tripwire file-events
    ```
 
    Only `eslogger` runs as root. The TripWire receiver refuses to run as root. If using a different database, append `--db /absolute/path/events.sqlite` to **tripwire**, not eslogger. The Tripwires page provides a quoted command for the actual app and database paths.
-3. Inspect **Sensor Status → File-open event bridge**. It must show recent valid input. No recent input is unknown/error, even if it is merely quiet. Starting ordinary monitoring only starts snapshots; it does not start this separate feed.
+3. Inspect **Sensor Status → File activity event bridge**. It must show recent valid input. No recent input is unknown/error, even if it is merely quiet. Starting ordinary monitoring only starts snapshots; it does not start this separate feed.
 4. Test using a non-sensitive file in a boundary you explicitly chose. Ask the recognized AI app to open it, then inspect the in-app tripwire alert, path, reported process, association basis and event time. A production finding must come from a real event; test fixtures never populate your store. Do not assume capture is working solely because the terminal process started.
 5. Press **Control-C** to stop. Close the pipeline/terminal when finished. The app shows stopped/stale feed status and preserves prior evidence. Review or revoke any terminal permission you no longer want.
 
