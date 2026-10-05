@@ -49,6 +49,7 @@ public enum FileAccessReview {
         guard event.sourceCollector == "ai-open-files", event.observation.eventClass == .file,
               ["INITIAL", "NEW", "CHANGED"].contains(event.eventType),
               event.previousState != event.currentState,
+              event.observation.attributes["associatedApp"] != nil,
               let reason = event.observation.attributes["reviewReason"] else { return nil }
         let attrs = event.observation.attributes
         return Finding(timestamp: event.timestamp, title: "AI-associated process holds a file in a sensitive location",

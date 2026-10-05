@@ -47,7 +47,7 @@ public final class EventStore {
                 if !memoryOnly { try execute("PRAGMA journal_mode=WAL"); try execute("PRAGMA synchronous=FULL") }
                 try execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
                 try execute("INSERT OR IGNORE INTO metadata VALUES ('schema','1')")
-                for table in ["events", "findings", "inventory", "sensors", "gaps", "agent_receipts"] {
+                for table in ["events", "findings", "inventory", "sensors", "gaps", "agent_receipts", "finding_reviews"] {
                     try execute("CREATE TABLE IF NOT EXISTS \(table) (id TEXT PRIMARY KEY, timestamp REAL NOT NULL, json TEXT NOT NULL)")
                     try execute("CREATE INDEX IF NOT EXISTS \(table)_time ON \(table)(timestamp)")
                 }
@@ -116,6 +116,59 @@ public final class EventStore {
                               eventsTruncated: events.count > bound, findingsTruncated: findings.count > bound)
     }
     public func findings() throws -> [Finding] { lock.lock(); defer { lock.unlock() }; return try read(Finding.self, table: "findings") }
+    public func findingReviews() throws -> [FindingReview] {
+        lock.lock(); defer { lock.unlock() }
+        guard try scalar("SELECT name FROM sqlite_master WHERE type='table' AND name='finding_reviews'") != nil else { return [] }
+        return try query("SELECT json FROM finding_reviews ORDER BY rowid DESC").map { try JSONDecoder.stored.decode(FindingReview.self, from: Data($0[0].utf8)) }
+    }
+    public func reviewFinding(id: String, level: RiskLevel, status: FindingReviewStatus, reason: String, expectedReviewID: String?) throws {
+        let reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reason.isEmpty, reason.count <= 500, !reason.unicodeScalars.contains(where: { CharacterSet.controlCharacters.subtracting(.newlines).contains($0) }) else {
+            throw TripWireError.message("Add a correction reason of 1–500 characters without control characters.")
+        }
+        lock.lock(); defer { lock.unlock() }
+        try requireWritable(); try execute("BEGIN IMMEDIATE")
+        do {
+            guard let json = try scalar("SELECT json FROM findings WHERE id=?", bindings: [id]) else { throw TripWireError.message("Finding no longer available") }
+            let finding = try JSONDecoder.stored.decode(Finding.self, from: Data(json.utf8))
+            let current = FindingAssessment(finding: finding, reviews: try findingReviews())
+            guard current.latestReview?.id == expectedReviewID else { throw TripWireError.message("This finding was reviewed elsewhere. Refresh and inspect that correction before saving.") }
+            guard current.level != level || current.status != status else { throw TripWireError.message("Choose a different risk level or review status.") }
+            let review = FindingReview(id: UUID().uuidString, findingID: id, timestamp: Date(), level: level, status: status,
+                previousLevel: current.level, previousStatus: current.status, suggestedLevel: current.suggestedLevel, reason: reason)
+            try save(review, id: review.id, date: review.timestamp, table: "finding_reviews")
+            try execute("COMMIT")
+        } catch { try? execute("ROLLBACK"); throw error }
+    }
+    /// Append neutral review records atomically; never delete evidence, lower
+    /// risk, alter boundaries, or clear observations outside the confirmed set.
+    @discardableResult public func clearFindingQueue(_ targets: [FindingReviewTarget]) throws -> Int {
+        guard !targets.isEmpty, targets.count <= 10_000,
+              Set(targets.map(\.findingID)).count == targets.count else {
+            throw TripWireError.message("Choose 1–10,000 distinct open findings to clear.")
+        }
+        lock.lock(); defer { lock.unlock() }
+        try requireWritable(); try execute("BEGIN IMMEDIATE")
+        do {
+            let latest = Dictionary(try findingReviews().map { ($0.findingID, $0) }, uniquingKeysWith: { first, _ in first })
+            for target in targets {
+                guard let json = try scalar("SELECT json FROM findings WHERE id=?", bindings: [target.findingID]) else {
+                    throw TripWireError.message("A finding is no longer available. Refresh the queue before clearing it.")
+                }
+                let finding = try JSONDecoder.stored.decode(Finding.self, from: Data(json.utf8))
+                let current = FindingAssessment(finding: finding, reviews: latest[target.findingID].map { [$0] } ?? [])
+                guard current.status == .open, current.latestReview?.id == target.expectedReviewID else {
+                    throw TripWireError.message("A finding changed since this queue was selected. Nothing was cleared. Refresh and try again.")
+                }
+                let review = FindingReview(id: UUID().uuidString, findingID: finding.id, timestamp: Date(), level: current.level, status: .cleared,
+                    previousLevel: current.level, previousStatus: current.status, suggestedLevel: current.suggestedLevel,
+                    reason: "Cleared from the Open queue by the user. Risk classification and evidence are unchanged; this is not a safety or false-positive determination.")
+                try save(review, id: review.id, date: review.timestamp, table: "finding_reviews")
+            }
+            try execute("COMMIT")
+            return targets.count
+        } catch { try? execute("ROLLBACK"); throw error }
+    }
     public func inventory() throws -> [InventoryRecord] { lock.lock(); defer { lock.unlock() }; return try read(InventoryRecord.self, table: "inventory") }
     public func sensors() throws -> [SensorHealth] { lock.lock(); defer { lock.unlock() }; return try read(SensorHealth.self, table: "sensors").sorted { $0.id < $1.id } }
     public func gaps() throws -> [CoverageGap] { lock.lock(); defer { lock.unlock() }; return try read(CoverageGap.self, table: "gaps") }
@@ -170,7 +223,7 @@ public final class EventStore {
     public func saveTripwire(_ proposed: TripwireRule) throws {
         var rule = try proposed.validated()
         guard rule.platform == HostPlatform.current else { throw TripWireError.message("Edit this tripwire on its configured platform") }
-        rule.revision = UUID().uuidString
+        rule.revision = UUID().uuidString; rule.updatedAt = Date()
         try changeTripwires(action: "SAVED", rule: rule) { rules in
             if let i = rules.firstIndex(where: { $0.id == rule.id }) { rules[i] = rule }
             else { guard rules.count < 128 else { throw TripWireError.message("Up to 128 tripwires are supported") }; rules.append(rule) }
@@ -190,7 +243,7 @@ public final class EventStore {
             guard let audited else { throw TripWireError.message("Tripwire no longer exists") }
             try change(&rules)
             try setMetadata("tripwire-rules-v1", String(decoding: try JSONEncoder.stable.encode(rules), as: UTF8.self))
-            let attrs = ["ruleID": audited.id, "name": audited.name, "path": audited.path, "kind": audited.kind.rawValue, "enabled": String(audited.enabled), "revision": audited.revision]
+            let attrs = ["ruleID": audited.id, "name": audited.name, "path": audited.path, "kind": audited.kind.rawValue, "enabled": String(audited.enabled), "revision": audited.revision, "scope": audited.effectiveScope.rawValue]
             let observation = Observation(key: audited.id, eventClass: .configuration, component: audited.name, attributes: attrs)
             let event = EvidenceEvent(timestamp: Date(), sourceCollector: "tripwire-configuration", eventType: action, observation: observation, currentState: action == "DELETED" ? nil : attrs, baselineStatus: .unknown,
                 evidence: ["Explicit local configuration change. No target was opened or modified. Rules apply to future observed snapshots; this is not a detection."], limitations: ["Rules alert on supported evidence and do not block access."])

@@ -2,13 +2,14 @@ import SwiftUI
 import TripWireCore
 
 struct FindingSummary: View {
+    @EnvironmentObject var model: DashboardModel
     var finding: Finding
     var inspect: () -> Void
     var body: some View {
         Button(action: inspect) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top) {
-                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                    RiskBadge(assessment: model.view?.assessment(for: finding) ?? FindingAssessment(finding: finding))
                     Text(finding.title).font(.headline)
                     Spacer()
                     Label("Inspect finding", systemImage: "arrow.right").foregroundStyle(accent)
@@ -27,18 +28,26 @@ struct FindingSummary: View {
 struct FindingDetail: View {
     @EnvironmentObject var model: DashboardModel
     var finding: Finding
+    var embedded = false
     @State private var evidence: FindingEvidence?
     @State private var error: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Button { model.route = .findings(nil) } label: { Label("All findings", systemImage: "arrow.left") }
+            if !embedded { Button { model.route = .findings(nil) } label: { Label("All findings", systemImage: "arrow.left") }
+                RiskBadge(assessment: model.view?.assessment(for: finding) ?? FindingAssessment(finding: finding)) }
             Text(finding.title).font(.title2.bold())
             Text(finding.component).font(.body.monospaced()).textSelection(.enabled)
             Text("Observed \(TimeText.iso(finding.timestamp)) · \(finding.severity.rawValue)").foregroundStyle(.secondary)
+            FindingReviewEditor(finding: finding).id(finding.id)
             explanation("What was found", finding.whatHappened, icon: "eye")
             explanation("Why it was flagged", evidence?.explanation(for: finding) ?? finding.whyFlagged, icon: "flag")
-            explanation("Which agent caused this?", "Not established. The current collectors do not identify the agent responsible for this change. A socket owner, reported action, active AI session or nearby resource spike alone does not prove causation.", icon: "person.crop.circle.badge.questionmark")
+            if let evidence {
+                ForEach(evidence.events.filter { AccessContext.text($0) != nil }) { event in
+                    explanation("How was it accessed?", AccessContext.text(event) ?? "Unknown", icon: "point.3.connected.trianglepath.dotted")
+                }
+            }
+            explanation("Which agent caused this?", associationExplanation, icon: "person.crop.circle.badge.questionmark")
             HStack(alignment: .top, spacing: 24) {
                 explanation("Observation confidence", finding.confidence.rawValue, icon: "checkmark.magnifyingglass")
                 explanation("Malicious intent", "Unknown — a finding establishes an observation, not intent.", icon: "questionmark.circle")
@@ -84,6 +93,13 @@ struct FindingDetail: View {
             evidence = nil; error = nil
             do { evidence = try model.evidence(for: finding) } catch { self.error = String(describing: error) }
         }
+    }
+    private var associationExplanation: String {
+        let associations = (evidence?.events ?? []).compactMap { event -> String? in
+            guard let app = event.observation.attributes["associatedApp"], let basis = event.observation.attributes["associationBasis"] else { return nil }
+            return "\(app): \(basis)"
+        }
+        return associations.isEmpty ? "Not established in the available evidence. Nearby activity or a resource spike does not prove causation." : Array(Set(associations)).sorted().joined(separator: "\n") + "\nAssociation is not proof of an AI instruction, user authorization or malicious intent."
     }
     private func explanation(_ title: String, _ text: String, icon: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {

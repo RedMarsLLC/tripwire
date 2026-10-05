@@ -15,6 +15,32 @@ final class TripwireRuleTests: XCTestCase {
             attributes: ["path": path, "associatedApp": "TEST AI", "associationBasis": "Synthetic test association", "openMode": "READ CAPABLE"], process: process, confidence: .moderate)
         return CollectorSnapshot(descriptor: SensorDescriptor("ai-open-files", "Test", source: "TEST ONLY", monitors: "Fixture handles"), observations: [row], complete: !partial, absenceReliable: false, state: partial ? .error : .degraded, visibility: .limited, detail: partial ? "Fixture partial source" : "Fixture")
     }
+    func testScopeMigrationAccountMatchAndUnsupportedSource() throws {
+        let rule = TripwireRule(name: "TEST scope", path: target, kind: .folder, scope: .currentUser)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder.stable.encode(rule)) as? [String: Any])
+        object.removeValue(forKey: "scope")
+        XCTAssertEqual(try JSONDecoder.stored.decode(TripwireRule.self, from: JSONSerialization.data(withJSONObject: object)).effectiveScope, .aiAssociated)
+        var sample = fileSample()
+        sample.observations[0].attributes.removeValue(forKey: "associatedApp")
+        XCTAssertTrue(TripwireMatcher.matches(sample, rules: [rule]).isEmpty)
+        sample.observations[0].attributes["collectorUID"] = "1000"
+        XCTAssertEqual(TripwireMatcher.matches(sample, rules: [rule]).count, 1)
+        sample.observations[0].attributes["collectorUID"] = "1001"
+        XCTAssertTrue(TripwireMatcher.matches(sample, rules: [rule]).isEmpty)
+        sample.observations[0].attributes["collectorUID"] = "1000"
+        sample.descriptor = SensorDescriptor("untrusted-other-source", "TEST", source: "TEST", monitors: "TEST")
+        XCTAssertTrue(TripwireMatcher.matches(sample, rules: [rule]).isEmpty)
+    }
+    func testWindowsSIDApplicationScopeDoesNotRequireAIAncestry() {
+        let path = "C:/apps/private.exe"
+        let rule = TripwireRule(name: "TEST app", path: path, kind: .application, platform: .windows, scope: .currentUser)
+        let identity = ProcessIdentity(pid: 10, accountID: "S-TEST", executablePath: path, launchTime: Date())
+        var row = Observation(key: "TEST", eventClass: .process, component: path, attributes: ["collectorAccountSID": "S-TEST"], process: identity)
+        let descriptor = SensorDescriptor("processes", "TEST", source: "TEST", monitors: "TEST")
+        func matches(_ row: Observation) -> Int { TripwireMatcher.matches(CollectorSnapshot(descriptor: descriptor, observations: [row], detail: "TEST"), rules: [rule], platform: .windows).count }
+        XCTAssertEqual(matches(row), 1)
+        row.attributes["collectorAccountSID"] = "S-OTHER"; XCTAssertEqual(matches(row), 0)
+    }
     func testPathBoundariesAndNormalization() throws {
         let folder = TripwireRule(name: "Keys", path: "/private/keys", kind: .folder, platform: .linux)
         XCTAssertTrue(TripwirePath.matches("/private/keys/one", rule: folder))

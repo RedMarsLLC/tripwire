@@ -59,7 +59,7 @@ public struct ProcessCollector: Collector {
         let rows = snapshot.entries.map { entry in
             let p = entry.identity
             return Observation(key: p.instanceKey ?? "unknown:\(p.pid ?? -1):\(entry.started)", eventClass: .process, component: p.executablePath ?? "PID \(p.pid ?? -1) · executable unknown",
-                attributes: ["executable": p.executablePath ?? "UNKNOWN", "uid": p.uid.map(String.init) ?? "UNKNOWN", "signature": "NOT OBSERVABLE"], process: p, limitations: descriptor.limitations, confidence: .moderate)
+                attributes: ["collectorUID": String(geteuid()), "executable": p.executablePath ?? "UNKNOWN", "uid": p.uid.map(String.init) ?? "UNKNOWN", "signature": "NOT OBSERVABLE"], process: p, limitations: descriptor.limitations, confidence: .moderate)
         }
         return CollectorSnapshot(descriptor: descriptor, observations: rows, complete: !snapshot.limited, absenceReliable: false,
             state: snapshot.limited ? .error : .degraded, detail: "\(rows.count) process snapshots; \(snapshot.limited ? "partial/failed inventory" : "visible PID namespace only"). No process-exit inference.")

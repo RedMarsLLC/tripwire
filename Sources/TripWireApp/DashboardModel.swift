@@ -4,7 +4,7 @@ import TripWireCore
 import TripWireCollectors
 
 @MainActor final class DashboardModel: ObservableObject {
-    @Published var view: StoreView?
+    @Published var view: StoreView? { didSet { alert = bannerState.next(pendingAlerts) } }
     @Published private(set) var agents = AgentActivityView()
     @Published var metricInspection: MetricInspection?
     @Published var appResourceSnapshot = AppResourceMetrics()
@@ -16,7 +16,10 @@ import TripWireCollectors
     @Published private(set) var stopping = false
     @Published var route: DashboardRoute = .overview
     @Published var configurationError: String?
-    @Published private var dismissedAlerts = Set<String>()
+    @Published private(set) var alert: Finding?
+    private var bannerState = AlertBannerState()
+    let fileMonitor = FileMonitorController()
+    private var fileMonitorChanges: AnyCancellable?
     var store: EventStore?
     let storeURL: URL
     private let collectors: [any Collector]
@@ -31,6 +34,7 @@ import TripWireCollectors
         let index = args.firstIndex(of: "--db")
         self.storeURL = storeURL ?? index.flatMap { $0 + 1 < args.count ? URL(fileURLWithPath: args[$0 + 1]) : nil } ?? EventStore.defaultURL
         collectors = CollectorRegistry.make(storeURL: self.storeURL)
+        fileMonitorChanges = fileMonitor.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         refresh()
     }
     func refresh() {
@@ -75,6 +79,7 @@ import TripWireCollectors
         do { writer = try EventStore(url: storeURL) }
         catch { collectionError = String(describing: error); return }
         sampling = true; running = !once; stopping = false; collectionError = nil
+        if !once && fileMonitor.enabledForSession && !fileMonitor.phase.active { fileMonitor.start(storeURL: storeURL) }
         task = Task {
             let monitor = Monitor(store: writer)
             defer {
@@ -90,10 +95,27 @@ import TripWireCollectors
             } catch is CancellationError {} catch { collectionError = String(describing: error) }
         }
     }
-    func stop() { stopping = true; task?.cancel() }
+    func stop() { stopping = sampling; task?.cancel(); fileMonitor.stop() }
+    var monitoringActive: Bool { running || fileMonitor.phase.active }
     var tripwireAlerts: [Finding] { (view?.findings ?? []).filter { $0.ruleID.hasPrefix("user-tripwire:") } }
-    var alert: Finding? { tripwireAlerts.first { !dismissedAlerts.contains($0.id) } }
-    func dismissAlert(_ finding: Finding) { dismissedAlerts.insert(finding.id) }
+    private var pendingAlerts: [Finding] { tripwireAlerts.filter { view?.assessment(for: $0).status == .open } }
+    var openFindings: [Finding] { view?.openFindings ?? [] }
+    func review(_ finding: Finding, level: RiskLevel, status: FindingReviewStatus, reason: String, expectedReviewID: String?) throws {
+        try EventStore(url: storeURL).reviewFinding(id: finding.id, level: level, status: status, reason: reason, expectedReviewID: expectedReviewID)
+        refresh()
+    }
+    func clearQueue(_ targets: [FindingReviewTarget]) async throws -> Int {
+        let url = storeURL
+        let count = try await Task.detached(priority: .userInitiated) {
+            try EventStore(url: url).clearFindingQueue(targets)
+        }.value
+        refresh()
+        return count
+    }
+    func dismissAlert(_ finding: Finding) {
+        bannerState.dismiss(pendingAlerts)
+        alert = nil
+    }
     @discardableResult func saveTripwire(_ rule: TripwireRule) -> Bool {
         do { try EventStore(url: storeURL).saveTripwire(rule); configurationError = nil; refresh(); return true }
         catch { configurationError = String(describing: error); return false }
@@ -108,13 +130,17 @@ import TripWireCollectors
 
     var sensors: [SensorHealth] {
         let saved = Dictionary(uniqueKeysWithValues: (view?.sensors ?? []).map { ($0.id, $0) })
-        return collectors.map { collector in
+        let registered = collectors.map { collector -> SensorHealth in
             if let health = saved[collector.descriptor.id] { return health.effective() }
             if let unavailable = collector as? UnavailableCollector {
                 return SensorHealth(descriptor: collector.descriptor, state: unavailable.state, visibility: .unavailable, detail: unavailable.reason)
             }
             return SensorHealth(descriptor: collector.descriptor)
         }
+        return registered + (saved[OpenEventBridge.id].map { [$0.effective(staleAfter: 10)] } ?? [])
+    }
+    var fileEventsReporting: Bool {
+        sensors.contains { $0.id == OpenEventBridge.id && SensorPresentation($0).kind == .reporting }
     }
     var reporting: Int { checkSummary.reporting.count }
     var checkSummary: CheckSummary { CheckSummary(sensors: sensors, running: running, sampling: sampling, readError: readError) }
@@ -125,6 +151,7 @@ import TripWireCollectors
         if stopping { return "Stopping monitoring…" }
         if running { return "Monitoring is on" }
         if sampling { return "Taking a snapshot…" }
+        if fileMonitor.phase.active { return fileMonitor.phase == .reporting ? "File monitoring is on" : "File monitor needs attention" }
         if reporting > 0 { return "Recent sensor reports from another session" }
         return hasSample ? "Monitoring is off" : "Ready for the first check"
     }
@@ -133,6 +160,7 @@ import TripWireCollectors
         if stopping { return "Finishing the current check and recording that collection has stopped." }
         if running { return "AI open-file snapshots target 2-second intervals; other inventories pause 15 seconds between rounds. Short-lived activity can be missed." }
         if sampling { return "One check of implemented sources. A snapshot stops when that round finishes." }
+        if fileMonitor.phase.active { return fileMonitor.detail }
         if reporting > 0 { return "This window is viewing the shared store. Recent heartbeats are available; stop or manage collection from the session that started it." }
         return "Start monitoring for repeated checks, or take a snapshot for one check. Unavailable sensors require further implementation."
     }

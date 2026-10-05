@@ -3,7 +3,7 @@ import TripWireCore
 
 public enum CollectorRegistry {
     public static func make(storeURL: URL) -> [any Collector] {
-        [SelfIntegrityCollector(storeURL: storeURL), ProcessCollector(), AIFileAccessCollector(), NetworkCollector(), ApplicationCollector(), PersistenceCollector(), ExtensionCollector(), KernelBundleCollector(), HardwareCollector(), ConfigurationCollector(), CanaryCollector(directory: storeURL.deletingLastPathComponent().appendingPathComponent("Canaries"))
+        [SelfIntegrityCollector(storeURL: storeURL), ProcessCollector(), AIFileAccessCollector(storeURL: storeURL), NetworkCollector(), ApplicationCollector(), PersistenceCollector(), ExtensionCollector(), KernelBundleCollector(), HardwareCollector(), ConfigurationCollector(), CanaryCollector(directory: storeURL.deletingLastPathComponent().appendingPathComponent("Canaries"))
         ] + unavailable.map { $0 as any Collector }
     }
     /// Declared implementation gaps, distinct from a temporarily unreadable source.

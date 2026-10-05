@@ -28,9 +28,12 @@ var targets: [Target] = [
 ]
 #if os(macOS)
 products.append(.executable(name: "TripWireApp", targets: ["TripWireApp"]))
+products.append(.executable(name: "TripWireFileHelper", targets: ["TripWireFileHelper"]))
 targets += [
+    .target(name: "CTripWireFileAuthorization", linkerSettings: [.linkedFramework("Security")]),
+    .executableTarget(name: "TripWireFileHelper"),
     .target(name: "TripWireCollectors", dependencies: ["TripWireCore"], exclude: ["Linux", "Windows", "PortableRegistry.swift", "PortableMetrics.swift"]),
-    .executableTarget(name: "TripWireApp", dependencies: ["TripWireCore", "TripWireCollectors"], resources: [.copy("Resources/OverlayFrame.png"), .copy("Resources/OverlayFrameVertical.png"), .copy("Resources/OverlayFrameMini.png"), .copy("Resources/DashboardLogo.png"), .copy("Resources/AppIcon.icns")]),
+    .executableTarget(name: "TripWireApp", dependencies: ["TripWireCore", "TripWireCollectors", "CTripWireFileAuthorization"], resources: [.copy("Resources/OverlayFrame.png"), .copy("Resources/OverlayFrameVertical.png"), .copy("Resources/OverlayFrameMini.png"), .copy("Resources/DashboardLogo.png"), .copy("Resources/AppIcon.icns")]),
     .testTarget(name: "TripWireTests", dependencies: ["TripWireCore", "TripWireCollectors", "TripWireTerminal"], resources: [.copy("Fixtures")]),
     .testTarget(name: "TripWireAppTests", dependencies: ["TripWireApp"])
 ]
@@ -42,6 +45,6 @@ let collectorSources = ["Windows", "PortableRegistry.swift", "PortableMetrics.sw
 let otherPlatform = "Windows"
 let collectorSources = ["Linux", "PortableRegistry.swift", "PortableMetrics.swift", "Monitor.swift", "FileWatchSession.swift", "UnavailableCollector.swift"]
 #endif
-targets.append(.target(name: "TripWireCollectors", dependencies: ["TripWireCore", "CTripWirePlatform"], exclude: [otherPlatform, "Support.swift", "BoundedSignatureLookup.swift", "AIFileAccess.swift", "Persistence.swift", "Extensions.swift", "Processes.swift", "HostResourceSampler.swift", "Hardware.swift", "SelfIntegrity.swift", "Applications.swift", "Registry.swift", "AgentIntegrationProbe.swift", "Configuration.swift", "Network.swift", "AIAppResourceSampler.swift"], sources: collectorSources))
+targets.append(.target(name: "TripWireCollectors", dependencies: ["TripWireCore", "CTripWirePlatform"], exclude: [otherPlatform, "Support.swift", "BoundedSignatureLookup.swift", "AIFileAccess.swift", "Persistence.swift", "Extensions.swift", "Processes.swift", "HostResourceSampler.swift", "Hardware.swift", "SelfIntegrity.swift", "Applications.swift", "Registry.swift", "AgentIntegrationProbe.swift", "Configuration.swift", "Network.swift", "AIAppResourceSampler.swift", "OpenEventBridge.swift"], sources: collectorSources))
 #endif
 let package = Package(name: "TripWire", platforms: [.macOS(.v14)], products: products, targets: targets)

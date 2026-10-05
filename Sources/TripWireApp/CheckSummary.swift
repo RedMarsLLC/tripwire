@@ -17,7 +17,7 @@ struct CheckSummary {
 
     init(sensors: [SensorHealth], running: Bool, sampling: Bool, readError: String?, now: Date = Date()) {
         self.running = running; self.sampling = sampling; self.readError = readError
-        let sources = sensors.map { $0.effective(at: now, staleAfter: $0.id == AIFileAccessCollector.id ? 10 : 90) }
+        let sources = sensors.map { $0.effective(at: now, staleAfter: [AIFileAccessCollector.id, OpenEventBridge.id].contains($0.id) ? 10 : 90) }
         let missing = Set(CollectorRegistry.unavailable.map { $0.descriptor.id })
         notImplemented = sources.filter { missing.contains($0.id) }
         optional = sources.filter { $0.id == "canaries" && $0.state == .stopped && (!$0.initialized || $0.visibility == .unavailable) }
@@ -42,6 +42,7 @@ struct CheckSummary {
         if paused { return "CHECKS PAUSED · START ↗" }
         if reporting.isEmpty && sampling { return "CHECKS STARTING…" }
         if !waiting.isEmpty { return "\(waiting.count) CHECK\(waiting.count == 1 ? "" : "S") NOT REPORTING ↗" }
+        if reporting.contains(where: { $0.id == OpenEventBridge.id }) { return "FILE OPEN EVENTS · LIMITED ↗" }
         if reporting.contains(where: { $0.id == AIFileAccessCollector.id }) { return "FILE WATCH: SNAPSHOTS ↗" }
         if notImplemented.contains(where: { $0.id == "endpoint-security" }) { return "AI FILE ACCESS NOT MONITORED ↗" }
         return "CHECKS LIVE · VIEW SCOPE ↗"
@@ -49,6 +50,7 @@ struct CheckSummary {
     var focus: SensorScope {
         if readError != nil || paused { return .all }
         if !failed.isEmpty || !waiting.isEmpty { return .attention }
+        if reporting.contains(where: { $0.id == OpenEventBridge.id }) { return .sensor(OpenEventBridge.id) }
         if reporting.contains(where: { $0.id == AIFileAccessCollector.id }) { return .sensor(AIFileAccessCollector.id) }
         if notImplemented.contains(where: { $0.id == "endpoint-security" }) { return .sensor("endpoint-security") }
         return .all
@@ -60,7 +62,7 @@ struct CheckSummary {
         if paused { return "Security inventory checks are stopped. Click Start to run them while TripWire is open. Live CPU/RAM charts run separately and do not mean security monitoring is on." }
         if reporting.isEmpty && sampling { return "Waiting for this monitoring round to produce its first reports." }
         if !waiting.isEmpty { return "No current report from: " + waiting.map { $0.descriptor.name }.joined(separator: ", ") + ". Open details to see the last check and restart or retry the source." }
-        if reporting.contains(where: { $0.id == AIFileAccessCollector.id }) { return "Open File Activity to inspect file paths, holding processes, associated AI apps and sensitive-location findings. Open-file snapshots target 2-second intervals; brief opens and actual reads/writes are not audited. Full OS event monitoring still requires an implemented, approved Endpoint Security deployment." }
+        if reporting.contains(where: { $0.id == AIFileAccessCollector.id }) { return "Open File Activity to inspect file paths, holding processes, associated AI apps and sensitive-location findings. Open-file snapshots target 2-second intervals; brief opens and actual reads/writes are not audited. For brief operations, open Tripwires → File monitoring and enable the in-app monitor with macOS approval. The diagnostic source remains limited; a native Endpoint Security provider is not deployed." }
         return "The current build has no OS event collector for individual file accesses or reliable agent attribution. This requires implementation and an approved Endpoint Security deployment; starting checks or changing a setting cannot enable it."
     }
     var catalogExplanation: String {

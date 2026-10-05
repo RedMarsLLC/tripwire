@@ -28,9 +28,10 @@ public struct ProcessCollector: Collector {
     public init() {}
     public func collect() async -> CollectorSnapshot {
         let result = WindowsSources.processes()
+        let account = result.identities.first { $0.pid == ProcessInfo.processInfo.processIdentifier }?.accountID ?? ""
         let rows = result.identities.map { p in Observation(key: p.instanceKey ?? "unknown:\(p.pid ?? -1)", eventClass: .process,
             component: p.executablePath ?? "PID \(p.pid ?? -1) · executable unknown",
-            attributes: ["executable": p.executablePath ?? "UNKNOWN", "accountSID": p.accountID ?? "UNKNOWN", "signature": p.signatureStatus ?? "UNKNOWN"], process: p, limitations: descriptor.limitations, confidence: .moderate) }
+            attributes: ["collectorAccountSID": account, "executable": p.executablePath ?? "UNKNOWN", "accountSID": p.accountID ?? "UNKNOWN", "signature": p.signatureStatus ?? "UNKNOWN"], process: p, limitations: descriptor.limitations, confidence: .moderate) }
         return CollectorSnapshot(descriptor: descriptor, observations: rows, complete: !result.limited, absenceReliable: false,
             state: rows.isEmpty ? .error : .degraded, detail: "\(rows.count) visible process records; \(result.limited ? "protected, denied or bounded entries omitted/incomplete" : "snapshot only"). No exit or exhaustive-coverage inference.")
     }

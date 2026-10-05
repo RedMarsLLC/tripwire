@@ -36,6 +36,23 @@ final class FileAccessTests: XCTestCase {
         XCTAssertEqual(snapshot.visibility, .limited)
         XCTAssertTrue(item.limitations.contains { $0.contains("not proof that bytes were read or written") })
     }
+    func testCurrentAccountSnapshotRetainsOnlyBoundaryFilesWithoutAIRecognition() throws {
+        let rule = TripwireRule(name: "TEST account", path: "/test-home/.ssh", kind: .folder, scope: .currentUser)
+        var unrelated = file; unrelated.path = "/test-home/ordinary/private-document"
+        let result = Sampler.snapshot(rules: [rule], apps: [], inventory: .init(values: [child], partial: false), metadata: { _ in self.child }, files: { _ in .init(values: [self.file, unrelated]) }, home: "/test-home")
+        let row = try XCTUnwrap(result.observations.first)
+        XCTAssertEqual(result.observations.count, 1); XCTAssertEqual(row.component, path)
+        XCTAssertNil(row.attributes["associatedApp"]); XCTAssertTrue(AccessContext.isMonitoringAccount(row))
+        let event = EvidenceEvent(timestamp: Date(), sourceCollector: Sampler.id, eventType: "INITIAL", observation: row, currentState: row.attributes, baselineStatus: .unknown)
+        XCTAssertNil(FileAccessReview.finding(event), "Account scope must not manufacture an AI-sensitive finding")
+        XCTAssertEqual(TripwireMatcher.matches(result, rules: [rule]).count, 1)
+    }
+    func testDirectoryHandlesAreRetainedForFolderRules() throws {
+        var directory = file; directory.path = "/test-home/private-folder"; directory.isDirectory = true
+        let rows = sample(values: [directory]).observations
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertTrue(rows.allSatisfy { $0.attributes["objectType"] == "Directory" })
+    }
     func testReusedOrReparentedAncestorInvalidatesDescendantAssociation() {
         for replacement in [Process(pid: 10, parent: 1, started: 120, path: root.path), Process(pid: 10, parent: 99, started: 100, path: root.path)] {
             let result = Sampler.snapshot(apps: [app], inventory: .init(values: [root, child], partial: false),

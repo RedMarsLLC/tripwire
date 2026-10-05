@@ -8,7 +8,7 @@ TripWire is being ported to macOS, Linux and Windows. These are **different matu
 | Desktop | Native SwiftUI/AppKit | Python/Qt desktop and transparent overlay; Xvfb integration tested | Same Python/Qt desktop; offscreen integration tested |
 | Process snapshots | Native APIs | Bounded `/proc` metadata | Tool Help, image path, creation time, account SID |
 | TCP/UDP inventory | Existing adapter | IPv4/IPv6 current network namespace; owner unknown | IP Helper IPv4/IPv6 owner-PID tables; process instance unverified |
-| AI-associated open files | Same-user libproc snapshots | Same-UID `/proc/PID/fd` snapshots and revalidated ancestry | Unavailable |
+| AI-associated open files | Same-user libproc snapshots; optional authorized in-app eslogger session (diagnostic, limited; no terminal required) | Same-UID `/proc/PID/fd` snapshots and revalidated ancestry | Unavailable |
 | Kernel inventory | Installed kernel bundles and registered system extensions | Loaded dynamic modules from `/proc/modules` | Unavailable |
 | Apps, startup, hardware, configuration | Existing scoped adapters | Unavailable | Unavailable |
 | Host CPU and RAM | Existing definitions | `/proc/stat`, MemTotal minus MemAvailable | GetSystemTimes, physical total minus available |
